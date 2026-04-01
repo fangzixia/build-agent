@@ -1,0 +1,238 @@
+package core
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"build-agent/internal/agents"
+
+	"github.com/cloudwego/eino/adk"
+	"github.com/cloudwego/eino/adk/prebuilt/planexecute"
+	"github.com/cloudwego/eino/schema"
+)
+
+func (s *Service) RunTask(ctx context.Context, task string) (*RunResult, error) {
+	return s.RunTaskWithProgress(ctx, task, nil)
+}
+
+func (s *Service) RunTaskWithProgress(ctx context.Context, task string, onProgress ProgressFunc) (*RunResult, error) {
+	normalized, err := s.agent.Workflow().NormalizeInput(task)
+	if err != nil {
+		return nil, err
+	}
+	defer s.cleanupTemporaryArtifacts(onProgress)
+	output, events, hasError := s.runOnce(ctx, s.agent.Workflow().BuildTaskEnvelope(normalized), onProgress)
+	evaluatedAt := ""
+	if pp := s.agent.PostProcessor(); pp != nil {
+		post := pp.Process(agents.PostProcessInput{
+			Output:   output,
+			Events:   toPostProcessEvents(events),
+			HasError: hasError,
+		})
+		output = post.Output
+		hasError = post.HasError
+		evaluatedAt = post.EvaluatedAt
+		if onProgress != nil {
+			for _, ev := range post.Progress {
+				onProgress(EventLog{
+					AgentName: ev.AgentName,
+					Role:      ev.Role,
+					ToolName:  ev.ToolName,
+					Output:    ev.Output,
+					Error:     ev.Error,
+				})
+			}
+		}
+	}
+	return &RunResult{
+		Output:      s.agent.Workflow().BuildFinalSummary(output),
+		Events:      events,
+		HasError:    hasError,
+		EvaluatedAt: evaluatedAt,
+	}, nil
+}
+
+func toPostProcessEvents(events []EventLog) []agents.PostProcessEvent {
+	out := make([]agents.PostProcessEvent, 0, len(events))
+	for _, ev := range events {
+		out = append(out, agents.PostProcessEvent{
+			AgentName: ev.AgentName,
+			Role:      ev.Role,
+			ToolName:  ev.ToolName,
+			Output:    ev.Output,
+			Error:     ev.Error,
+		})
+	}
+	return out
+}
+
+func (s *Service) runOnce(ctx context.Context, task string, onProgress ProgressFunc) (string, []EventLog, bool) {
+	iter := s.runner.Query(ctx, task)
+	events := make([]EventLog, 0, 8)
+	finalOutput := ""
+	hasError := false
+	toolCalled := false
+	scCfg := s.cfg.Agent[s.agent.Name()]
+	execIter, planIter := 0, 0
+	lastExec, lastPlan := -1, -1
+	emitProgress := func() {
+		if execIter == lastExec && planIter == lastPlan {
+			return
+		}
+		lastExec, lastPlan = execIter, planIter
+		item := EventLog{AgentName: "system", Output: fmt.Sprintf("iter exec=%d/%d plan=%d/%d", execIter, scCfg.ExecutorMaxIterations, planIter, scCfg.PlanExecuteMaxIterations)}
+		events = append(events, item)
+		if onProgress != nil {
+			onProgress(item)
+		}
+	}
+	for {
+		ev, ok := iter.Next()
+		if !ok {
+			break
+		}
+		if ev == nil {
+			continue
+		}
+		item := EventLog{AgentName: ev.AgentName}
+		if ev.Err != nil {
+			item.Error = ev.Err.Error()
+			hasError = true
+		}
+		if ev.Output != nil && ev.Output.MessageOutput != nil {
+			item.Role = string(ev.Output.MessageOutput.Role)
+			item.ToolName = ev.Output.MessageOutput.ToolName
+		}
+		if txt := extractEventText(ev); txt != "" {
+			item.Output = txt
+			finalOutput = txt
+		}
+		if isToolEvent(ev) {
+			toolCalled = true
+			execIter++
+			emitProgress()
+			if runErr := RunCommandErrorFromEvent(item); runErr != "" && item.Error == "" {
+				// Non-zero run_command can be recoverable. Keep it as output hint,
+				// and let planner/replanner decide follow-up strategy.
+				if item.Output != "" {
+					item.Output = strings.TrimSpace(item.Output) + "\n[warn] " + runErr
+				} else {
+					item.Output = "[warn] " + runErr
+				}
+			}
+		} else if isPlanIterationEvent(ev, item) {
+			planIter++
+			emitProgress()
+		}
+		if item.Output != "" || item.Error != "" {
+			events = append(events, item)
+			if onProgress != nil {
+				onProgress(item)
+			}
+		}
+	}
+	if strings.TrimSpace(finalOutput) == "" && len(events) > 0 {
+		finalOutput = events[len(events)-1].Output
+	}
+	if !toolCalled {
+		hasError = true
+		if strings.TrimSpace(finalOutput) == "" {
+			finalOutput = "未检测到任何工具调用，任务未实际执行。"
+		}
+	}
+	return finalOutput, events, hasError
+}
+
+func extractEventText(ev *adk.AgentEvent) string {
+	if ev.Output == nil {
+		return ""
+	}
+	if resp, ok := ev.Output.CustomizedOutput.(*planexecute.Response); ok && resp != nil {
+		return strings.TrimSpace(resp.Response)
+	}
+	if resp, ok := ev.Output.CustomizedOutput.(planexecute.Response); ok {
+		return strings.TrimSpace(resp.Response)
+	}
+	if ev.Output.MessageOutput != nil {
+		msg, err := ev.Output.MessageOutput.GetMessage()
+		if err == nil && msg != nil {
+			return strings.TrimSpace(msg.Content)
+		}
+	}
+	return ""
+}
+
+func isToolEvent(ev *adk.AgentEvent) bool {
+	return ev != nil && ev.Output != nil && ev.Output.MessageOutput != nil && ev.Output.MessageOutput.Role == schema.Tool
+}
+
+func isPlanIterationEvent(ev *adk.AgentEvent, logItem EventLog) bool {
+	if ev == nil || isToolEvent(ev) {
+		return false
+	}
+	name := strings.ToLower(strings.TrimSpace(ev.AgentName))
+	if strings.Contains(name, "planner") || strings.Contains(name, "replanner") || strings.Contains(name, "planexecute") {
+		return true
+	}
+	return strings.Contains(strings.TrimSpace(logItem.Output), "\"steps\"")
+}
+
+func (s *Service) cleanupTemporaryArtifacts(onProgress ProgressFunc) {
+	tempDir := s.agent.ToolPolicy().TempDirName
+	if tempDir == "" {
+		tempDir = ".build-agent-tmp"
+	}
+	target := filepath.Join(s.cfg.Base.WorkspaceRoot, tempDir)
+	info, err := os.Stat(target)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return
+		}
+		if onProgress != nil {
+			onProgress(EventLog{AgentName: "system", Error: fmt.Sprintf("临时目录状态检查失败: %v", err)})
+		}
+		return
+	}
+	if !info.IsDir() {
+		if onProgress != nil {
+			onProgress(EventLog{AgentName: "system", Error: fmt.Sprintf("临时路径不是目录，跳过清理: %s", target)})
+		}
+		return
+	}
+	const attempts = 5
+	const delay = 200 * time.Millisecond
+	var lastErr error
+	for i := 0; i < attempts; i++ {
+		if i > 0 {
+			time.Sleep(delay)
+		}
+		lastErr = os.RemoveAll(target)
+		if lastErr == nil {
+			return
+		}
+	}
+	if lastErr != nil && onProgress != nil {
+		onProgress(EventLog{AgentName: "system", Error: fmt.Sprintf("临时目录清理失败（已重试 %d 次）: %v", attempts, lastErr)})
+	}
+}
+
+func RunCommandErrorFromEvent(ev EventLog) string {
+	if ev.ToolName != "run_command" || strings.TrimSpace(ev.Output) == "" {
+		return ""
+	}
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(ev.Output), &obj); err != nil {
+		return ""
+	}
+	code, _ := obj["exit_code"].(float64)
+	if int(code) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("run_command exit_code=%d", int(code))
+}
