@@ -79,6 +79,7 @@ func (s *Service) runOnce(ctx context.Context, task string, onProgress ProgressF
 	hasError := false
 	toolCalled := false
 	scCfg := s.cfg.Agent[s.agent.Name()]
+	agentName := s.agent.Name()
 	execIter, planIter := 0, 0
 	lastExec, lastPlan := -1, -1
 	emitProgress := func() {
@@ -103,7 +104,11 @@ func (s *Service) runOnce(ctx context.Context, task string, onProgress ProgressF
 		item := EventLog{AgentName: ev.AgentName}
 		if ev.Err != nil {
 			item.Error = ev.Err.Error()
-			hasError = true
+			// Only mark hasError for the top-level agent's own errors, not sub-agent errors
+			// that are already handled and returned as tool results.
+			if isOwnEvent(ev, agentName) {
+				hasError = true
+			}
 		}
 		if ev.Output != nil && ev.Output.MessageOutput != nil {
 			item.Role = string(ev.Output.MessageOutput.Role)
@@ -111,24 +116,28 @@ func (s *Service) runOnce(ctx context.Context, task string, onProgress ProgressF
 		}
 		if txt := extractEventText(ev); txt != "" {
 			item.Output = txt
-			finalOutput = txt
-		}
-		if isToolEvent(ev) {
-			toolCalled = true
-			execIter++
-			emitProgress()
-			if runErr := RunCommandErrorFromEvent(item); runErr != "" && item.Error == "" {
-				// Non-zero run_command can be recoverable. Keep it as output hint,
-				// and let planner/replanner decide follow-up strategy.
-				if item.Output != "" {
-					item.Output = strings.TrimSpace(item.Output) + "\n[warn] " + runErr
-				} else {
-					item.Output = "[warn] " + runErr
-				}
+			// Only update finalOutput from the top-level agent's own text events.
+			if isOwnEvent(ev, agentName) {
+				finalOutput = txt
 			}
-		} else if isPlanIterationEvent(ev, item) {
-			planIter++
-			emitProgress()
+		}
+		// Only count tool/plan iterations for the top-level agent's own events.
+		if isOwnEvent(ev, agentName) {
+			if isToolEvent(ev) {
+				toolCalled = true
+				execIter++
+				emitProgress()
+				if runErr := RunCommandErrorFromEvent(item); runErr != "" && item.Error == "" {
+					if item.Output != "" {
+						item.Output = strings.TrimSpace(item.Output) + "\n[warn] " + runErr
+					} else {
+						item.Output = "[warn] " + runErr
+					}
+				}
+			} else if isPlanIterationEvent(ev, item) {
+				planIter++
+				emitProgress()
+			}
 		}
 		if item.Output != "" || item.Error != "" {
 			events = append(events, item)
@@ -147,6 +156,27 @@ func (s *Service) runOnce(ctx context.Context, task string, onProgress ProgressF
 		}
 	}
 	return finalOutput, events, hasError
+}
+
+// isOwnEvent returns true if the event belongs to the top-level agent (not a sub-agent).
+// Sub-agent events emitted via EmitInternalEvents have a different AgentName.
+func isOwnEvent(ev *adk.AgentEvent, agentName string) bool {
+	if ev.AgentName == "" {
+		return true // untagged events belong to the top-level agent
+	}
+	evName := strings.ToLower(strings.TrimSpace(ev.AgentName))
+	own := strings.ToLower(strings.TrimSpace(agentName))
+	// planexecute internal agents are named like "planner", "executor", "replanner"
+	// which don't match sub-agent names like "code", "eval", "analysis".
+	if evName == own {
+		return true
+	}
+	// Events from planexecute internals (planner/executor/replanner) belong to the top-level agent.
+	if strings.Contains(evName, "planner") || strings.Contains(evName, "executor") ||
+		strings.Contains(evName, "replanner") || strings.Contains(evName, "planexecute") {
+		return true
+	}
+	return false
 }
 
 func extractEventText(ev *adk.AgentEvent) string {

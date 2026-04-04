@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Build Agent - Web 项目开发闭环</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="app">
+        <!-- 顶部导航 -->
+        <header class="header">
+            <div class="container">
+                <h1 class="logo">🤖 Build Agent</h1>
+                <nav class="nav">
+                    <a href="#dashboard" class="nav-link active" data-page="dashboard">仪表盘</a>
+                    <a href="#requirements" class="nav-link" data-page="requirements">需求管理</a>
+                    <a href="#execution" class="nav-link" data-page="execution">执行任务</a>
+                    <a href="#history" class="nav-link" data-page="history">验收历史</a>
+                </nav>
+            </div>
+        </header>
+
+        <!-- 主内容区 -->
+        <main class="main">
+            <div class="container">
+                <!-- 仪表盘页面 -->
+                <div id="dashboard-page" class="page active">
+                    <h2 class="page-title">项目概览</h2>
+                    
+                    <!-- 统计卡片 -->
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-icon">📋</div>
+                            <div class="stat-content">
+                                <div class="stat-label">总需求数</div>
+                                <div class="stat-value" id="total-requirements">0</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">✅</div>
+                            <div class="stat-content">
+                                <div class="stat-label">已通过</div>
+                                <div class="stat-value" id="passed-requirements">0</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">❌</div>
+                            <div class="stat-content">
+                                <div class="stat-label">未通过</div>
+                                <div class="stat-value" id="failed-requirements">0</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">📊</div>
+                            <div class="stat-content">
+                                <div class="stat-label">通过率</div>
+                                <div class="stat-value" id="pass-rate">0%</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 最近需求 -->
+                    <div class="section">
+                        <h3 class="section-title">最近需求</h3>
+                        <div id="recent-requirements" class="requirements-list">
+                            <div class="empty-state">暂无需求数据</div>
+                        </div>
+                    </div>
+
+                    <!-- 失败项统计 -->
+                    <div class="section">
+                        <h3 class="section-title">失败项统计</h3>
+                        <div id="failure-stats" class="failure-stats">
+                            <div class="empty-state">暂无失败项数据</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 需求管理页面 -->
+                <div id="requirements-page" class="page">
+                    <div class="page-header">
+                        <h2 class="page-title">需求管理</h2>
+                        <button class="btn btn-primary" id="create-requirement-btn">
+                            <span class="btn-icon">➕</span>
+                            创建需求
+                        </button>
+                    </div>
+
+                    <div id="requirements-list" class="requirements-list">
+                        <div class="empty-state">暂无需求数据</div>
+                    </div>
+                </div>
+
+                <!-- 执行任务页面 -->
+                <div id="execution-page" class="page">
+                    <h2 class="page-title">执行任务</h2>
+
+                    <!-- 快速操作 -->
+                    <div class="quick-actions">
+                        <div class="action-card" data-action="analysis">
+                            <div class="action-icon">🔍</div>
+                            <div class="action-title">分析项目</div>
+                            <div class="action-desc">分析前后端结构，生成项目信息</div>
+                        </div>
+                        <div class="action-card" data-action="requirements">
+                            <div class="action-icon">📝</div>
+                            <div class="action-title">创建需求</div>
+                            <div class="action-desc">编写需求和验收标准</div>
+                        </div>
+                        <div class="action-card" data-action="code">
+                            <div class="action-icon">💻</div>
+                            <div class="action-title">编码实现</div>
+                            <div class="action-desc">根据需求实现代码</div>
+                        </div>
+                        <div class="action-card" data-action="eval">
+                            <div class="action-icon">✓</div>
+                            <div class="action-title">验收评测</div>
+                            <div class="action-desc">验收实现是否符合需求</div>
+                        </div>
+                        <div class="action-card" data-action="build">
+                            <div class="action-icon">🔄</div>
+                            <div class="action-title">完整构建</div>
+                            <div class="action-desc">编码 → 验收循环直到通过</div>
+                        </div>
+                    </div>
+
+                    <!-- 执行表单 -->
+                    <div id="execution-form" class="execution-form" style="display: none;">
+                        <div class="form-header">
+                            <h3 id="execution-form-title">执行任务</h3>
+                            <button class="btn-close" id="close-execution-form">✕</button>
+                        </div>
+                        <div class="form-body">
+                            <div class="form-group">
+                                <label for="task-input">任务描述</label>
+                                <textarea id="task-input" class="form-control" rows="4" placeholder="请输入任务描述..."></textarea>
+                            </div>
+                            <!-- 动态字段将在这里插入 -->
+                            <div class="form-actions">
+                                <button class="btn btn-secondary" id="cancel-execution-btn">取消</button>
+                                <button class="btn btn-primary" id="submit-execution-btn">
+                                    <span class="btn-icon">▶</span>
+                                    开始执行
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 执行进度 -->
+                    <div id="execution-progress" class="execution-progress" style="display: none;">
+                        <div class="progress-header">
+                            <h3>执行中...</h3>
+                            <div class="progress-status" id="progress-status">准备中</div>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progress-fill"></div>
+                        </div>
+                        <div class="progress-logs" id="progress-logs">
+                            <div class="log-entry">
+                                <span class="log-time">00:00:00</span>
+                                <span class="log-message">等待开始...</span>
+                            </div>
+                        </div>
+                        <div class="progress-actions">
+                            <button class="btn btn-secondary" id="stop-execution-btn" disabled>停止执行</button>
+                        </div>
+                    </div>
+
+                    <!-- 执行结果 -->
+                    <div id="execution-result" class="execution-result" style="display: none;">
+                        <div class="result-header">
+                            <h3>执行结果</h3>
+                            <div class="result-status" id="result-status"></div>
+                        </div>
+                        <div class="result-content" id="result-content"></div>
+                        <div class="result-actions">
+                            <button class="btn btn-primary" id="new-execution-btn">执行新任务</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 验收历史页面 -->
+                <div id="history-page" class="page">
+                    <h2 class="page-title">验收历史</h2>
+                    
+                    <div class="filter-bar">
+                        <select id="filter-requirement" class="form-control">
+                            <option value="">全部需求</option>
+                        </select>
+                        <select id="filter-status" class="form-control">
+                            <option value="">全部状态</option>
+                            <option value="passed">已通过</option>
+                            <option value="failed">未通过</option>
+                        </select>
+                    </div>
+
+                    <div id="history-list" class="history-list">
+                        <div class="empty-state">暂无验收历史</div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- 底部 -->
+        <footer class="footer">
+            <div class="container">
+                <p>&copy; 2024 Build Agent. 基于 AI 的 Web 项目开发闭环工具</p>
+            </div>
+        </footer>
+    </div>
+
+    <!-- 模态框：创建需求 -->
+    <div id="create-requirement-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>创建需求</h3>
+                <button class="btn-close" id="close-create-requirement-modal">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="requirement-description">需求描述</label>
+                    <textarea id="requirement-description" class="form-control" rows="6" placeholder="请详细描述需求..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="cancel-create-requirement">取消</button>
+                <button class="btn btn-primary" id="submit-create-requirement">
+                    <span class="btn-icon">✓</span>
+                    创建
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 模态框：需求详情 -->
+    <div id="requirement-detail-modal" class="modal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h3 id="requirement-detail-title">需求详情</h3>
+                <button class="btn-close" id="close-requirement-detail-modal">✕</button>
+            </div>
+            <div class="modal-body">
+                <div id="requirement-detail-content" class="markdown-content"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="close-requirement-detail">关闭</button>
+                <button class="btn btn-secondary" id="edit-requirement-detail">
+                    <span class="btn-icon">✏️</span>
+                    编辑
+                </button>
+                <button class="btn btn-primary" id="run-build-from-detail">
+                    <span class="btn-icon">🔄</span>
+                    执行构建
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 模态框：文件编辑器 -->
+    <div id="file-editor-modal" class="modal">
+        <div class="modal-content modal-xlarge">
+            <div class="modal-header">
+                <h3 id="file-editor-title">文件编辑</h3>
+                <div class="editor-tabs">
+                    <button class="editor-tab active" data-tab="edit">编辑</button>
+                    <button class="editor-tab" data-tab="preview">预览</button>
+                    <button class="editor-tab" data-tab="split">分屏</button>
+                </div>
+                <button class="btn-close" id="close-file-editor-modal">✕</button>
+            </div>
+            <div class="modal-body editor-body">
+                <div class="editor-container">
+                    <div class="editor-pane edit-pane active">
+                        <textarea id="file-editor-textarea" class="markdown-editor" placeholder="在此编辑 Markdown 内容..."></textarea>
+                    </div>
+                    <div class="editor-pane preview-pane">
+                        <div id="file-editor-preview" class="markdown-content"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div class="editor-info">
+                    <span id="editor-file-path" class="editor-path"></span>
+                    <span id="editor-status" class="editor-status"></span>
+                </div>
+                <div class="editor-actions">
+                    <button class="btn btn-secondary" id="cancel-file-editor">取消</button>
+                    <button class="btn btn-primary" id="save-file-editor">
+                        <span class="btn-icon">💾</span>
+                        保存
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

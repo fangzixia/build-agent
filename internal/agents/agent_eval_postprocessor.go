@@ -18,22 +18,31 @@ type evalPostProcessor struct {
 }
 
 func (p evalPostProcessor) Process(in PostProcessInput) PostProcessResult {
-	const draftRel = ".eval-agent-tmp/evaluation-draft.md"
-	draftAbs := filepath.Join(p.workspaceRoot, draftRel)
 	finalRel := p.resolveEvalOutputRel(in)
 	finalAbs := filepath.Join(p.workspaceRoot, filepath.FromSlash(finalRel))
 	_ = os.MkdirAll(filepath.Dir(finalAbs), 0o755)
-	draftBytes, err := os.ReadFile(draftAbs)
-	draftOK := err == nil && strings.TrimSpace(string(draftBytes)) != ""
-	score, hasScore := extractScore(string(draftBytes))
+
+	// Try draft file as supplementary source, but it's optional.
+	const draftRel = ".eval-agent-tmp/evaluation-draft.md"
+	draftAbs := filepath.Join(p.workspaceRoot, draftRel)
+	draftBytes, _ := os.ReadFile(draftAbs)
+	draftContent := string(draftBytes)
+	draftOK := strings.TrimSpace(draftContent) != ""
+
+	// Prefer executor output as the primary source; fall back to draft.
+	primaryContent := in.Output
+	if !hasEvalScore(primaryContent) && draftOK {
+		primaryContent = draftContent
+	}
+	score, hasScore := extractScore(primaryContent)
 	evaluatedAtTime := time.Now().In(time.Local)
 	evaluatedAt := formatEvaluationTimestamp(evaluatedAtTime)
 
 	var body string
-	if draftOK && !in.HasError {
-		body = prependEvaluationSummary(string(draftBytes), p.passThreshold, evaluatedAtTime)
+	if hasScore && !in.HasError {
+		body = prependEvaluationSummary(primaryContent, p.passThreshold, evaluatedAtTime)
 	} else {
-		body = buildAutoEvaluationMarkdown(in.HasError, draftOK, hasScore, score, p.passThreshold, evaluatedAtTime, in.Output, in.Events, string(draftBytes))
+		body = buildAutoEvaluationMarkdown(in.HasError, draftOK, hasScore, score, p.passThreshold, evaluatedAtTime, in.Output, in.Events, draftContent)
 	}
 	out := PostProcessResult{
 		Output:      in.Output,

@@ -1,198 +1,242 @@
-## build-agent
+# Build Agent
 
-统一的多 Agent 编排服务，整合 `code`、`analysis`、`eval`、`requirements (req)` 四类能力，在**单一二进制**中提供多场景调用，并通过配置实现**能力强隔离**。
+**AI 驱动的软件开发闭环工具**
 
-### 核心能力
+通过 4 个专业 Agent 的协作，实现从需求分析到代码实现、再到验收评测的完整开发闭环。
 
-- **多场景单二进制**：通过 `agent code|analysis|eval|req run/chat/serve` 统一入口完成所有能力调用  
-- **公共 core**：基于 Plan-Execute 的装配流程、统一的事件流与轮次日志
-- **公共 toolkit**：抽象文件工具、命令工具与策略隔离，方便扩展新能力
-- **配置强隔离**：每个场景使用独立的 OPENAI 配置，不回退到全局 `OPENAI_*`
-- **eval 场景增强**：支持前台执行 `python *.py`，自动切换为后台服务（日志写入 `.eval-agent-tmp/eval-server.log`）
-- **req 场景产物管理**：
-  - 自动生成 `.spec/REQ-xxxxx.md`，按五位流水号递增
-  - 支持“指定文件修改”：任务中给出目标需求 md 文件名时，仅修改该文件
+## 快速开始
 
----
+### 1. 环境准备
 
-## 环境准备
+- Go >= 1.24
+- 配置 OpenAI API（或兼容的 LLM 服务）
 
-- **语言环境**：Go \>= 1.24（`go.mod` 中为 `go 1.24.1`）
-- **依赖管理**：使用 Go Modules（无需 `GOPATH`）
-- **主要依赖**：
-  - `github.com/cloudwego/eino` 及 `eino-ext`：用于 LLM 能力编排
-  - `github.com/spf13/cobra`：CLI 命令行框架
-  - `github.com/joho/godotenv`：加载 `.env` 配置
-
-### 安装依赖
+### 2. 配置
 
 ```bash
-go mod tidy
-```
-
----
-
-## 配置说明
-
-项目使用 `.env` / `.env.example` 管理敏感配置（如 OpenAI Key、BaseURL 等）。
-
-1. 复制示例配置：
-
-```bash
+# 复制配置文件
 cp .env.example .env
+
+# 编辑 .env，填入你的 API 配置
+# 每个 Agent 使用独立配置：
+# - ANALYSIS_OPENAI_API_KEY / ANALYSIS_OPENAI_BASE_URL
+# - REQUIREMENTS_OPENAI_API_KEY / REQUIREMENTS_OPENAI_BASE_URL  
+# - CODE_OPENAI_API_KEY / CODE_OPENAI_BASE_URL
+# - EVAL_OPENAI_API_KEY / EVAL_OPENAI_BASE_URL
 ```
 
-2. 根据实际环境填入：
-
-- **全局**：如需要，可配置公共 `OPENAI_*`（但各场景不会回退到这些全局变量）
-- **按场景隔离**（示例命名，具体以代码实现为准）：
-  - `CODE_OPENAI_API_KEY` / `CODE_OPENAI_BASE_URL`
-  - `ANALYSIS_OPENAI_API_KEY` / `ANALYSIS_OPENAI_BASE_URL`
-  - `EVAL_OPENAI_API_KEY` / `EVAL_OPENAI_BASE_URL`
-  - `REQ_OPENAI_API_KEY` / `REQ_OPENAI_BASE_URL`
-
-各场景缺失自己的配置时，不会自动回退到全局 `OPENAI_*`，以保证行为可预期。
-
----
-
-## 目录结构概览
-
-（仅列出与使用/二次开发关系最紧密的部分）
-
-- `cmd/agent/main.go`：CLI 入口，定义 `agent` 主命令
-- `internal/cli`：命令行参数与子命令（`code` / `analysis` / `eval` / `req` 等）
-- `internal/agents`：各场景 Agent 实现
-  - `code_agent.go`：代码修改/生成等能力
-  - `analysis_agent.go`：代码/需求/文档分析能力
-  - `eval_agent.go`：评测与执行相关能力
-  - `requirements_agent.go`：需求文档生成与增量更新
-  - `build.go` / `types.go`：Agent 构建与公共类型
-- `internal/core`：核心调度与服务层
-- `internal/http`：HTTP Server 及路由
-- `internal/config`：配置加载与解析
-- `internal/toolkit`：文件操作、命令执行、路径守卫等通用工具
-
----
-
-## 命令行使用
-
-### 基础运行
+### 3. 启动
 
 ```bash
 # 安装依赖
 go mod tidy
 
-# Code 场景：一次性任务
-go run ./cmd/agent code run --task "你的任务"
+# 启动 Web UI（推荐）
+go run ./cmd/agent serve --addr :8080
+# 访问 http://localhost:8080
 
-# Analysis 场景
-go run ./cmd/agent analysis run --task "请分析当前项目结构"
-
-# Eval 场景
-go run ./cmd/agent eval run --task "对 tests 目录下的用例进行评估"
-
-# Req 场景：生成/补全需求
-go run ./cmd/agent req run --task "用户登录功能的完整需求与验收标准"
-go run ./cmd/agent req run --task "请更新 REQ-00001.md，补全登录需求验收标准"
+# 或使用命令行
+go run ./cmd/agent req run --task "用户登录功能需求"
+go run ./cmd/agent code run --task "实现登录功能"
+go run ./cmd/agent eval run --task "验收登录功能"
 ```
 
-### Chat 模式
+## 核心功能
 
-适合与某一场景进行多轮交互：
+### 4 个专业 Agent
+
+| Agent | 功能 | 输出 |
+|-------|------|------|
+| **Analysis** | 分析项目结构、技术栈、API 契约 | `.spec/design.md` |
+| **Requirements** | 生成需求文档和验收标准（用户视角） | `.spec/REQ-xxxxx.md` |
+| **Code** | 根据需求实现/修改代码 | 源代码文件 |
+| **Eval** | 验收评测，生成评分和改进建议 | `.spec/EVAL-REQ-xxxxx-xx.md` |
+
+### 开发闭环
+
+```
+需求 → 分析 → 编码 → 评测 → (未通过则修复) → 通过
+```
+
+## 使用方式
+
+### Web UI（推荐）
+
+启动服务后访问 http://localhost:8080
+
+- **仪表盘**：查看需求统计、通过率、失败项分析
+- **需求管理**：创建、查看、编辑需求文档
+- **执行任务**：一键执行分析、创建需求、编码、评测
+- **验收历史**：查看所有评测记录和详情
+- **文件编辑器**：Markdown 编辑、实时预览、分屏模式
+
+### 命令行
 
 ```bash
-go run ./cmd/agent code chat
-go run ./cmd/agent analysis chat
-go run ./cmd/agent eval chat
+# 分析项目
+go run ./cmd/agent analysis run --task "分析项目结构"
+
+# 创建需求
+go run ./cmd/agent req run --task "用户登录功能需求"
+
+# 编码实现
+go run ./cmd/agent code run --task "实现登录功能"
+
+# 验收评测
+go run ./cmd/agent eval run --task "验收登录功能"
+
+# 完整构建（编码→评测循环直到通过）
+go run ./cmd/agent build run --task "实现并验收登录功能"
+
+# Chat 模式（多轮交互）
 go run ./cmd/agent req chat
 ```
 
-### 独立 Serve 模式（按场景暴露 HTTP）
-
-每个场景可以单独开启 HTTP 服务：
+### HTTP API
 
 ```bash
-go run ./cmd/agent code serve --addr :8080
-go run ./cmd/agent analysis serve --addr :8081
-go run ./cmd/agent eval serve --addr :8082
-go run ./cmd/agent req serve --addr :8083
-```
-
----
-
-## HTTP 服务
-
-项目同时提供一个统一的 HTTP 入口，方便通过 REST 接入：
-
-```bash
+# 启动服务
 go run ./cmd/agent serve --addr :8080
-```
 
-### 请求示例
+# 调用 API
+curl -X POST http://localhost:8080/v1/req/run \
+  -H "Content-Type: application/json" \
+  -d '{"task":"用户登录功能需求"}'
 
-```bash
-# code 场景：一次性任务
+# 流式输出（实时日志）
 curl -X POST http://localhost:8080/v1/code/run \
   -H "Content-Type: application/json" \
-  -d "{\"task\":\"读取当前目录并总结\"}"
-
-# analysis 场景
-curl -X POST http://localhost:8080/v1/analysis/run \
-  -H \"Content-Type: application/json\" \
-  -d \"{\\\"task\\\":\\\"请分析当前代码架构\\\"}\"
-
-# eval 场景
-curl -X POST http://localhost:8080/v1/eval/run \
-  -H \"Content-Type: application/json\" \
-  -d \"{\\\"task\\\":\\\"对脚本运行结果进行评估\\\"}\"
-
-# req 场景：生成需求
-curl -X POST http://localhost:8080/v1/req/run \
-  -H "Content-Type: application/json" \
-  -d "{\"task\":\"请补全一个用户登录需求\"}"
-
-# req 场景：指定需求文件增量修改
-curl -X POST http://localhost:8080/v1/req/run \
-  -H "Content-Type: application/json" \
-  -d "{\"task\":\"请修改 REQ-00001.md，补全接口验收标准\"}"
+  -H "Accept: text/event-stream" \
+  -d '{"task":"实现登录功能"}'
 ```
 
-### 兼容入口说明
+## 核心特性
 
-当使用 `agent <scene> serve` 启动时，服务会为该场景提供一个兼容路径：
+- **单一二进制**：所有功能集成在一个可执行文件
+- **配置隔离**：每个 Agent 使用独立的 LLM 配置
+- **Plan-Execute**：智能规划和执行任务
+- **流式输出**：实时查看执行日志
+- **文件管理**：自动管理需求和评测文档
+- **完整闭环**：从需求到交付的自动化流程
 
-- 若使用 `agent analysis serve` 启动，则 `/v1/run` 会按 **analysis 场景** 执行。
+## 项目结构
 
----
+```
+build-agent/
+├── cmd/agent/          # CLI 入口
+├── internal/
+│   ├── agents/         # 4 个 Agent 实现
+│   ├── core/           # Plan-Execute 核心
+│   ├── http/           # HTTP 服务和 API
+│   ├── config/         # 配置管理
+│   └── toolkit/        # 工具集（文件、命令等）
+├── web/                # Web UI 前端
+│   ├── index.html
+│   └── static/
+├── .spec/              # 需求和评测文档（自动生成）
+│   ├── design.md       # 项目设计文档
+│   ├── REQ-xxxxx.md    # 需求文档
+│   └── EVAL-*.md       # 评测报告
+└── .env                # 配置文件
+```
 
-## 常见使用场景示例
+## 配置说明
 
-- **代码修改/实现功能（code）**  
-  - 从自然语言任务生成/修改代码  
-  - 对现有代码进行重构与补充注释（按策略约束）
+每个 Agent 使用独立的环境变量配置：
 
-- **架构/需求分析（analysis）**  
-  - 总结项目目录与模块关系  
-  - 从代码/文档中抽取需求与风险点
+```bash
+# Analysis Agent
+ANALYSIS_OPENAI_API_KEY=sk-xxx
+ANALYSIS_OPENAI_BASE_URL=https://api.openai.com/v1
+ANALYSIS_OPENAI_MODEL=gpt-4
+ANALYSIS_DESIGN_SPEC_PATH=.spec/design.md
 
-- **评测与执行（eval）**  
-  - 运行指定 `python` 脚本并记录日志  
-  - 针对用例/脚本输出自动生成评测结论
+# Requirements Agent
+REQUIREMENTS_OPENAI_API_KEY=sk-xxx
+REQUIREMENTS_OPENAI_BASE_URL=https://api.openai.com/v1
+REQUIREMENTS_OPENAI_MODEL=gpt-4
+REQUIREMENTS_SPEC_DIR=.spec
 
-- **需求文档管理（req）**  
-  - 生成全新需求说明书（`.spec/REQ-xxxxx.md`）  
-  - 在指定需求文件上进行增量更新（如补充验收标准）
+# Code Agent
+CODE_OPENAI_API_KEY=sk-xxx
+CODE_OPENAI_BASE_URL=https://api.openai.com/v1
+CODE_OPENAI_MODEL=gpt-4
 
----
+# Eval Agent
+EVAL_OPENAI_API_KEY=sk-xxx
+EVAL_OPENAI_BASE_URL=https://api.openai.com/v1
+EVAL_OPENAI_MODEL=gpt-4
+```
 
-## 开发与扩展建议
+详细配置请参考 `.env.example`。
 
-- **新增场景**：在 `internal/agents` 中增加新的 Agent，并在 `internal/cli` / `internal/http` 中挂接对应命令和路由
-- **复用工具**：优先使用 `internal/toolkit` 已有的文件与命令工具，以保证行为一致性与安全性
-- **配置约束**：为新场景定义独立的环境变量前缀，延续“配置强隔离”的设计
+## 典型场景
 
----
+### 场景 1：新功能开发
+
+```bash
+# 1. 创建需求
+go run ./cmd/agent req run --task "用户注册功能：邮箱注册、密码强度验证、邮箱验证"
+
+# 2. 实现代码
+go run ./cmd/agent code run --task "实现 REQ-00001.md 中的注册功能"
+
+# 3. 验收评测
+go run ./cmd/agent eval run --task "验收注册功能"
+
+# 4. 如果未通过，修复后重新评测
+go run ./cmd/agent code run --task "修复 EVAL-REQ-00001-01.md 中的问题"
+go run ./cmd/agent eval run --task "重新验收注册功能"
+```
+
+### 场景 2：使用 Web UI
+
+1. 访问 http://localhost:8080
+2. 点击"创建需求"，输入需求描述
+3. 点击"编码实现"，选择需求文件
+4. 点击"验收评测"，查看评测结果
+5. 如果未通过，重复步骤 3-4
+
+### 场景 3：完整构建（自动循环）
+
+```bash
+# 一次性完成：编码 → 评测 → 修复 → 重新评测，直到通过
+go run ./cmd/agent build run --task "实现并验收用户登录功能"
+```
+
+## 开发与扩展
+
+### 添加新 Agent
+
+1. 在 `internal/agents/` 创建新的 Agent 文件
+2. 实现 `Agent` 接口
+3. 在 `internal/cli/` 添加命令
+4. 在 `internal/http/` 添加 API 路由
+
+### 自定义工具
+
+在 `internal/toolkit/` 中添加新的工具函数，所有 Agent 都可以使用。
+
+## 常见问题
+
+**Q: 如何使用不同的 LLM 服务？**  
+A: 修改 `.env` 中的 `*_OPENAI_BASE_URL`，指向兼容 OpenAI API 的服务（如 Azure OpenAI、本地模型等）。
+
+**Q: 需求文件编号如何管理？**  
+A: 自动按 `REQ-00001.md`、`REQ-00002.md` 递增，无需手动管理。
+
+**Q: 如何修改已有需求？**  
+A: 在任务中指定文件名，如 `"修改 REQ-00001.md，补充验收标准"`。
+
+**Q: 评测不通过怎么办？**  
+A: 查看 `EVAL-*.md` 中的失败项和改进建议，修复后重新评测。
 
 ## 许可证
 
-当前仓库未在根目录提供显式许可证文件，如有需要可根据实际开源策略补充 `LICENSE`。
+本项目未指定许可证，请根据实际情况添加。
+
+## 相关文档
+
+- [Web UI 功能说明](WEB_UI_NEW_FEATURES.md)
+- [系统评估报告](SYSTEM_ASSESSMENT.md)
+- [改进建议](IMPROVEMENT_RECOMMENDATIONS.md)

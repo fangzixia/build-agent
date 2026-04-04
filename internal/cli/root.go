@@ -14,7 +14,7 @@ import (
 
 	"build-agent/internal/config"
 	"build-agent/internal/core"
-
+	httpserver "build-agent/internal/http"
 
 	"github.com/spf13/cobra"
 )

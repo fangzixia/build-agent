@@ -31,7 +31,6 @@ type AgentConfig struct {
 	RequirementsSpecAbs      string
 	RequirementsSpecDirRel   string
 	RequirementsSpecDirAbs   string
-	PassScoreThreshold       int
 }
 
 type Config struct {
@@ -78,6 +77,10 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	c.Agent["build"], err = loadAgent("BUILD", c.Base.WorkspaceRoot)
+	if err != nil {
+		return nil, err
+	}
 	return c, c.Validate()
 }
 
@@ -89,7 +92,6 @@ func loadAgent(prefix, root string) (AgentConfig, error) {
 		OpenAIModel:              os.Getenv(prefix + "_OPENAI_MODEL"),
 		ExecutorMaxIterations:    getEnvInt(prefix+"_EXECUTOR_MAX_ITERATIONS", 100),
 		PlanExecuteMaxIterations: getEnvInt(prefix+"_PLAN_EXECUTE_MAX_ITERATIONS", 100),
-		PassScoreThreshold:       getEnvInt(prefix+"_PASS_SCORE_THRESHOLD", getEnvInt("EVAL_PASS_SCORE_THRESHOLD", 80)),
 	}
 	designFallback := ".spec/design.md"
 	if prefix == "ANALYSIS" || prefix == "EVAL" {

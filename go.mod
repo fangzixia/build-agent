@@ -1,6 +1,6 @@
 module build-agent
 
-go 1.24.1
+go 1.26.1
 
 require (
 	github.com/cloudwego/eino v0.8.5

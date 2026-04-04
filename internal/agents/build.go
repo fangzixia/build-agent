@@ -20,6 +20,8 @@ func Build(name string, cfg *config.Config) (Agent, error) {
 		return buildEvalAgent(cfg.Base.WorkspaceRoot, sc, cfg.Base.CmdTimeoutSec), nil
 	case "requirements":
 		return buildRequirementsAgent(cfg.Base.WorkspaceRoot, sc), nil
+	case "build":
+		return buildBuildAgent(cfg.Base.WorkspaceRoot, sc), nil
 	default:
 		return nil, fmt.Errorf("unknown agent: %s", name)
 	}
