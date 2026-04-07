@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="96" fill="#0F172A"/>
+  <circle cx="256" cy="256" r="160" fill="none" stroke="#38BDF8" stroke-width="19.2"/>
+  <!-- 齿轮 -->
+  <path d="M224 144v48M288 144v48M144 224h48M144 288h48M224 320v48M288 320v48M320 224h48M320 288h48" stroke="#38BDF8" stroke-width="16"/>
+  <!-- AI 标识 -->
+  <path d="M208 256h96" stroke="#fff" stroke-width="24"/>
+</svg>

@@ -1,2 +1,24 @@
-/.env
-/agent.exe
+# Environment variables
+.env
+
+# Build outputs
+/build/bin/
+/build/windows/icon.ico
+*.exe
+
+# Wails generated files
+/frontend/wailsjs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Spec outputs (optional - uncomment if you don't want to track these)
+# .spec/

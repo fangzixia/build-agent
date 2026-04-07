@@ -29,6 +29,7 @@ func NewRootCmd() *cobra.Command {
 	)
 	cmd.AddCommand(newBuildCmd())
 	cmd.AddCommand(newServeCmd())
+	cmd.AddCommand(newDesktopCmd())
 	return cmd
 }
 
@@ -245,6 +246,16 @@ func newServeCmd() *cobra.Command {
 	}
 	c.Flags().StringVar(&addr, "addr", "", "HTTP 监听地址")
 	return c
+}
+
+func newDesktopCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "desktop",
+		Short: "启动桌面应用模式",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return fmt.Errorf("desktop command must be run from cmd/desktop/main.go binary")
+		},
+	}
 }
 
 func newServeCmdForAgent(agentName string) *cobra.Command {

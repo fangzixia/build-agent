@@ -1,0 +1,22 @@
+{
+  "name": "Build Agent",
+  "outputfilename": "build-agent",
+  "wailsjsdir": "./frontend",
+  "version": "v2",
+  "frontend:install": "",
+  "frontend:build": "",
+  "frontend:dev:watcher": "",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "Build Agent Team",
+    "email": "team@buildagent.dev"
+  },
+  "info": {
+    "companyName": "Build Agent",
+    "productName": "Build Agent",
+    "productVersion": "1.0.0",
+    "copyright": "Copyright © 2024",
+    "comments": "AI-driven development tool"
+  },
+  "nsisType": "multiple"
+}

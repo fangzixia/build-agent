@@ -35,12 +35,12 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
 	// 静态文件服务
-	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
+	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("frontend/static"))))
 
 	// 首页
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
-			http.ServeFile(w, r, "web/index.html")
+			http.ServeFile(w, r, "frontend/index.html")
 			return
 		}
 		http.NotFound(w, r)
@@ -79,6 +79,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/requirements", s.handleGetRequirements())
 	mux.HandleFunc("/v1/evaluations", s.handleGetEvaluations())
 	mux.HandleFunc("/v1/config", s.handleGetConfig())
+
+	// ENV 配置管理 API
+	mux.HandleFunc("/v1/config/env", s.handleEnvConfig())
+	mux.HandleFunc("/v1/config/env/example", s.handleEnvConfigExample())
 
 	// Backward compatible endpoint: defaults to current server agent.
 	mux.HandleFunc("/v1/run", s.handleRunForAgent(s.defaultAgent))
@@ -372,5 +376,29 @@ func (s *Server) handleGetConfig() http.HandlerFunc {
 			"evalRequirementsSpecPath": s.cfg.Agent["eval"].RequirementsSpecRel,
 			"evalPassScoreThreshold":   100,
 		})
+	}
+}
+
+func (s *Server) handleEnvConfig() http.HandlerFunc {
+	handler := NewEnvConfigHandler(s.cfg.Base.WorkspaceRoot)
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			handler.HandleGetConfig(w, r)
+		} else if r.Method == http.MethodPost {
+			handler.HandleSaveConfig(w, r)
+		} else {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		}
+	}
+}
+
+func (s *Server) handleEnvConfigExample() http.HandlerFunc {
+	handler := NewEnvConfigHandler(s.cfg.Base.WorkspaceRoot)
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			handler.HandleGetExampleConfig(w, r)
+		} else {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		}
 	}
 }

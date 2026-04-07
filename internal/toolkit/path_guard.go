@@ -7,6 +7,12 @@ import (
 	"strings"
 )
 
+// ResolveSafePath validates and resolves a path to ensure it's within the workspace root.
+// It prevents directory traversal attacks by checking that the resolved path is under root.
+func ResolveSafePath(root, target string) (string, error) {
+	return resolveSafePath(root, target)
+}
+
 func resolveSafePath(root, target string) (string, error) {
 	if target == "" {
 		target = "."

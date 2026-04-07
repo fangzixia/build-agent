@@ -33,13 +33,33 @@ type AgentConfig struct {
 	RequirementsSpecDirAbs   string
 }
 
+type DesktopConfig struct {
+	// 窗口配置
+	WindowTitle  string
+	WindowWidth  int
+	WindowHeight int
+	MinWidth     int
+	MinHeight    int
+
+	// 系统托盘配置
+	EnableTray bool
+	TrayIcon   string
+
+	// 开发模式配置
+	DevMode      bool
+	DevServerURL string
+}
+
 type Config struct {
-	Base  BaseConfig
-	Agent map[string]AgentConfig
+	Base    BaseConfig
+	Agent   map[string]AgentConfig
+	Desktop DesktopConfig
 }
 
 func Load() (*Config, error) {
+	// .env 文件是可选的，不存在也不影响启动
 	_ = godotenv.Load(".env")
+
 	c := &Config{
 		Base: BaseConfig{
 			WorkspaceRoot:   os.Getenv("WORKSPACE_ROOT"),
@@ -48,6 +68,17 @@ func Load() (*Config, error) {
 			BuildMaxRetries: getEnvInt("BUILD_MAX_RETRIES", 5),
 		},
 		Agent: make(map[string]AgentConfig, 5),
+		Desktop: DesktopConfig{
+			WindowTitle:  getEnv("DESKTOP_WINDOW_TITLE", "Build Agent"),
+			WindowWidth:  getEnvInt("DESKTOP_WINDOW_WIDTH", 1280),
+			WindowHeight: getEnvInt("DESKTOP_WINDOW_HEIGHT", 800),
+			MinWidth:     getEnvInt("DESKTOP_MIN_WIDTH", 800),
+			MinHeight:    getEnvInt("DESKTOP_MIN_HEIGHT", 600),
+			EnableTray:   getEnvBool("DESKTOP_ENABLE_TRAY", true),
+			TrayIcon:     getEnv("DESKTOP_TRAY_ICON", ""),
+			DevMode:      getEnvBool("DESKTOP_DEV_MODE", false),
+			DevServerURL: getEnv("DESKTOP_DEV_SERVER_URL", ""),
+		},
 	}
 	if c.Base.WorkspaceRoot == "" {
 		cwd, err := os.Getwd()
@@ -61,6 +92,8 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("resolve WORKSPACE_ROOT: %w", err)
 	}
 	c.Base.WorkspaceRoot = absRoot
+
+	// 加载各个 agent 配置，使用默认值
 	c.Agent["code"], err = loadAgent("CODE", c.Base.WorkspaceRoot)
 	if err != nil {
 		return nil, err
@@ -81,30 +114,30 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	return c, c.Validate()
+
+	// 验证配置（如果没有配置 OpenAI，给出警告而不是错误）
+	return c, c.ValidateWithWarnings()
 }
 
 func loadAgent(prefix, root string) (AgentConfig, error) {
 	sc := AgentConfig{
 		Name:                     strings.ToLower(prefix),
-		OpenAIBaseURL:            os.Getenv(prefix + "_OPENAI_BASE_URL"),
-		OpenAIAPIKey:             os.Getenv(prefix + "_OPENAI_API_KEY"),
-		OpenAIModel:              os.Getenv(prefix + "_OPENAI_MODEL"),
+		OpenAIBaseURL:            getEnv(prefix+"_OPENAI_BASE_URL", "https://api.openai.com/v1"),
+		OpenAIAPIKey:             getEnv(prefix+"_OPENAI_API_KEY", ""),
+		OpenAIModel:              getEnv(prefix+"_OPENAI_MODEL", "gpt-4o-mini"),
 		ExecutorMaxIterations:    getEnvInt(prefix+"_EXECUTOR_MAX_ITERATIONS", 100),
 		PlanExecuteMaxIterations: getEnvInt(prefix+"_PLAN_EXECUTE_MAX_ITERATIONS", 100),
 	}
-	designFallback := ".spec/design.md"
-	if prefix == "ANALYSIS" || prefix == "EVAL" {
-		designFallback = getEnv("DESIGN_SPEC_PATH", ".spec/design.md")
-	}
-	designRaw := strings.TrimSpace(getEnv(prefix+"_DESIGN_SPEC_PATH", designFallback))
+	// 使用默认的 design spec 路径
+	designRaw := strings.TrimSpace(getEnv(prefix+"_DESIGN_SPEC_PATH", ".spec/design.md"))
 	absDesign, relDesign, err := resolvePathUnderRoot(root, designRaw)
 	if err != nil {
 		return AgentConfig{}, fmt.Errorf("%s_DESIGN_SPEC_PATH: %w", prefix, err)
 	}
 	sc.DesignSpecAbs, sc.DesignSpecRel = absDesign, relDesign
 	if strings.EqualFold(prefix, "EVAL") {
-		reqRaw := strings.TrimSpace(getEnv(prefix+"_REQUIREMENTS_SPEC_PATH", getEnv("REQUIREMENTS_SPEC_PATH", ".spec/REQ-00001.md")))
+		// 使用默认的 requirements spec 路径
+		reqRaw := strings.TrimSpace(getEnv(prefix+"_REQUIREMENTS_SPEC_PATH", ".spec/REQ-00001.md"))
 		absReq, relReq, err := resolvePathUnderRoot(root, reqRaw)
 		if err != nil {
 			return AgentConfig{}, fmt.Errorf("%s_REQUIREMENTS_SPEC_PATH: %w", prefix, err)
@@ -112,7 +145,8 @@ func loadAgent(prefix, root string) (AgentConfig, error) {
 		sc.RequirementsSpecAbs, sc.RequirementsSpecRel = absReq, relReq
 	}
 	if strings.EqualFold(prefix, "REQUIREMENTS") {
-		specDirRaw := strings.TrimSpace(getEnv(prefix+"_SPEC_DIR", getEnv("REQUIREMENTS_SPEC_DIR", ".spec")))
+		// 使用默认的 spec 目录
+		specDirRaw := strings.TrimSpace(getEnv(prefix+"_SPEC_DIR", ".spec"))
 		absSpecDir, relSpecDir, err := resolvePathUnderRoot(root, specDirRaw)
 		if err != nil {
 			return AgentConfig{}, fmt.Errorf("%s_SPEC_DIR: %w", prefix, err)
@@ -137,6 +171,36 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("%s agent iterations must be > 0", strings.ToUpper(name))
 		}
 	}
+	return nil
+}
+
+// ValidateWithWarnings 验证配置，对于缺失的 OpenAI 配置只打印警告而不返回错误
+func (c *Config) ValidateWithWarnings() error {
+	if c.Base.CmdTimeoutSec <= 0 {
+		return errors.New("CMD_TIMEOUT_SEC must be > 0")
+	}
+	if c.Base.BuildMaxRetries <= 0 {
+		return errors.New("BUILD_MAX_RETRIES must be > 0")
+	}
+
+	// 检查 OpenAI 配置，如果缺失则打印警告
+	hasValidConfig := false
+	for name, sc := range c.Agent {
+		if sc.OpenAIAPIKey == "" {
+			fmt.Printf("Warning: %s agent OPENAI_API_KEY is not configured. Please configure it in .env file or environment variables.\n", strings.ToUpper(name))
+		} else {
+			hasValidConfig = true
+		}
+		if sc.ExecutorMaxIterations <= 0 || sc.PlanExecuteMaxIterations <= 0 {
+			return fmt.Errorf("%s agent iterations must be > 0", strings.ToUpper(name))
+		}
+	}
+
+	if !hasValidConfig {
+		fmt.Println("Warning: No agent has valid OpenAI configuration. Please configure at least one agent in .env file.")
+		fmt.Println("You can access the system configuration page at http://localhost:8080/#config to set up the configuration.")
+	}
+
 	return nil
 }
 
@@ -183,4 +247,16 @@ func getEnvInt(key string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return fallback
+	}
+	return b
 }

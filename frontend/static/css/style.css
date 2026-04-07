@@ -1101,3 +1101,385 @@ body {
     background-color: var(--gray-50);
     cursor: not-allowed;
 }
+
+/* 配置页面样式 */
+.config-actions {
+    display: flex;
+    gap: 12px;
+}
+
+.loading-indicator {
+    text-align: center;
+    padding: 48px 24px;
+}
+
+.spinner {
+    width: 48px;
+    height: 48px;
+    border: 4px solid var(--gray-200);
+    border-top-color: var(--primary-color);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 16px;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.error-message {
+    background: #fee2e2;
+    border: 1px solid #fecaca;
+    color: #991b1b;
+    padding: 16px;
+    border-radius: var(--border-radius);
+    margin-bottom: 24px;
+}
+
+.success-message {
+    background: #d1fae5;
+    border: 1px solid #a7f3d0;
+    color: #065f46;
+    padding: 16px;
+    border-radius: var(--border-radius);
+    margin-bottom: 24px;
+}
+
+.config-form-container {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+/* 配置区块卡片 */
+.config-section {
+    background: white;
+    border: 1px solid var(--gray-200);
+    border-radius: var(--border-radius);
+    overflow: hidden;
+    box-shadow: var(--shadow);
+}
+
+.config-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    background: var(--gray-50);
+    border-bottom: 1px solid var(--gray-200);
+    cursor: pointer;
+    user-select: none;
+}
+
+.config-section-header:hover {
+    background: var(--gray-100);
+}
+
+.config-section-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--gray-900);
+}
+
+.config-section-icon {
+    font-size: 24px;
+}
+
+.config-section-toggle {
+    font-size: 20px;
+    color: var(--gray-500);
+    transition: transform 0.3s;
+}
+
+.config-section.collapsed .config-section-toggle {
+    transform: rotate(-90deg);
+}
+
+.config-section-body {
+    padding: 24px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+}
+
+.config-section.collapsed .config-section-body {
+    display: none;
+}
+
+/* 配置项 */
+.config-field {
+    display: flex;
+    flex-direction: column;
+}
+
+.config-field.full-width {
+    grid-column: 1 / -1;
+}
+
+.config-field-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-weight: 500;
+    color: var(--gray-700);
+    margin-bottom: 8px;
+    font-size: 13px;
+}
+
+.config-field-required {
+    color: var(--danger-color);
+    font-weight: 600;
+}
+
+.config-field-input-wrapper {
+    position: relative;
+}
+
+.config-field-input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--gray-300);
+    border-radius: var(--border-radius);
+    font-size: 14px;
+    transition: all 0.2s;
+}
+
+.config-field-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.config-field-input.error {
+    border-color: var(--danger-color);
+}
+
+.config-field-input[type="password"] {
+    padding-right: 40px;
+}
+
+.config-field-toggle-password {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: var(--gray-500);
+    cursor: pointer;
+    padding: 4px;
+    font-size: 16px;
+}
+
+.config-field-toggle-password:hover {
+    color: var(--gray-700);
+}
+
+.config-field-description {
+    font-size: 12px;
+    color: var(--gray-500);
+    margin-top: 4px;
+}
+
+.config-field-error {
+    font-size: 12px;
+    color: var(--danger-color);
+    margin-top: 4px;
+    display: none;
+}
+
+.config-field.has-error .config-field-error {
+    display: block;
+}
+
+/* 响应式布局 */
+@media (max-width: 1023px) {
+    .config-section-body {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 767px) {
+    .config-actions {
+        width: 100%;
+    }
+
+    .config-actions .btn {
+        flex: 1;
+    }
+
+    .page-header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+}
+
+/* 触摸设备优化 */
+@media (hover: none) and (pointer: coarse) {
+    .btn,
+    .config-field-input,
+    .config-section-header {
+        min-height: 44px;
+    }
+
+    .config-field-toggle-password {
+        min-width: 44px;
+        min-height: 44px;
+    }
+}
+
+/* 系统配置页面 */
+.config-editor-container {
+    margin-top: 20px;
+}
+
+.config-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+    border-bottom: 2px solid #e5e7eb;
+}
+
+.config-tab {
+    padding: 12px 20px;
+    background: none;
+    border: none;
+    border-bottom: 3px solid transparent;
+    color: #6b7280;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.config-tab:hover {
+    color: #3b82f6;
+    background-color: #f3f4f6;
+}
+
+.config-tab.active {
+    color: #3b82f6;
+    border-bottom-color: #3b82f6;
+}
+
+.config-tab-icon {
+    font-size: 16px;
+}
+
+.config-hint {
+    color: #6b7280;
+    font-size: 14px;
+    margin-bottom: 12px;
+    padding: 12px;
+    background-color: #f3f4f6;
+    border-radius: 6px;
+    border-left: 3px solid #3b82f6;
+}
+
+.config-textarea {
+    width: 100%;
+    min-height: 600px;
+    padding: 16px;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 14px;
+    line-height: 1.6;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    background-color: #ffffff;
+    color: #1f2937;
+    resize: vertical;
+    transition: border-color 0.2s;
+}
+
+.config-textarea:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.config-textarea:read-only {
+    background-color: #f9fafb;
+    color: #6b7280;
+    cursor: not-allowed;
+}
+
+.config-actions {
+    display: flex;
+    gap: 12px;
+}
+
+.loading-indicator {
+    text-align: center;
+    padding: 60px 20px;
+}
+
+.spinner {
+    width: 48px;
+    height: 48px;
+    border: 4px solid #e5e7eb;
+    border-top-color: #3b82f6;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 16px;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.error-message {
+    padding: 16px;
+    margin: 20px 0;
+    background-color: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: 8px;
+    color: #dc2626;
+    white-space: pre-wrap;
+}
+
+.success-message {
+    padding: 16px;
+    margin: 20px 0;
+    background-color: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-radius: 8px;
+    color: #16a34a;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .config-textarea {
+        min-height: 400px;
+        font-size: 13px;
+    }
+    
+    .config-actions {
+        flex-direction: column;
+    }
+    
+    .config-actions .btn {
+        width: 100%;
+    }
+    
+    .config-tabs {
+        flex-direction: column;
+    }
+    
+    .config-tab {
+        border-bottom: none;
+        border-left: 3px solid transparent;
+    }
+    
+    .config-tab.active {
+        border-left-color: #3b82f6;
+        border-bottom-color: transparent;
+    }
+}
