@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"build-agent/internal/agents"
+	"build-agent/internal/applog"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/adk/prebuilt/planexecute"
@@ -22,12 +23,32 @@ func (s *Service) RunTask(ctx context.Context, task string) (*RunResult, error) 
 }
 
 func (s *Service) RunTaskWithProgress(ctx context.Context, task string, onProgress ProgressFunc) (*RunResult, error) {
+	agentName := s.agent.Name()
+	applog.AI("task.start", map[string]any{"agent": agentName, "task": task})
+
 	normalized, err := s.agent.Workflow().NormalizeInput(task)
 	if err != nil {
+		applog.AI("task.error", map[string]any{"agent": agentName, "error": err.Error()})
 		return nil, err
 	}
 	defer s.cleanupTemporaryArtifacts(onProgress)
-	output, events, hasError := s.runOnce(ctx, s.agent.Workflow().BuildTaskEnvelope(normalized), onProgress)
+
+	// 包装 onProgress 以记录每个事件
+	wrappedProgress := func(ev EventLog) {
+		applog.AI("event", map[string]any{
+			"agent":    agentName,
+			"ev_agent": ev.AgentName,
+			"role":     ev.Role,
+			"tool":     ev.ToolName,
+			"output":   ev.Output,
+			"error":    ev.Error,
+		})
+		if onProgress != nil {
+			onProgress(ev)
+		}
+	}
+
+	output, events, hasError := s.runOnce(ctx, s.agent.Workflow().BuildTaskEnvelope(normalized), wrappedProgress)
 	evaluatedAt := ""
 	if pp := s.agent.PostProcessor(); pp != nil {
 		post := pp.Process(agents.PostProcessInput{
@@ -40,7 +61,7 @@ func (s *Service) RunTaskWithProgress(ctx context.Context, task string, onProgre
 		evaluatedAt = post.EvaluatedAt
 		if onProgress != nil {
 			for _, ev := range post.Progress {
-				onProgress(EventLog{
+				wrappedProgress(EventLog{
 					AgentName: ev.AgentName,
 					Role:      ev.Role,
 					ToolName:  ev.ToolName,
@@ -50,12 +71,14 @@ func (s *Service) RunTaskWithProgress(ctx context.Context, task string, onProgre
 			}
 		}
 	}
-	return &RunResult{
+	result := &RunResult{
 		Output:      s.agent.Workflow().BuildFinalSummary(output),
 		Events:      events,
 		HasError:    hasError,
 		EvaluatedAt: evaluatedAt,
-	}, nil
+	}
+	applog.AI("task.done", map[string]any{"agent": agentName, "has_error": hasError, "output": result.Output})
+	return result, nil
 }
 
 func toPostProcessEvents(events []EventLog) []agents.PostProcessEvent {

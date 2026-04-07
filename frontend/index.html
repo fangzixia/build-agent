@@ -28,6 +28,10 @@
                     <a href="#history" class="nav-link" data-page="history">验收历史</a>
                     <a href="#config" class="nav-link" data-page="config">系统配置</a>
                 </nav>
+                <div class="workspace-indicator" id="workspace-indicator" title="点击切换工作区">
+                    <span class="workspace-icon">📁</span>
+                    <span class="workspace-path" id="workspace-path-display">未选择工作区</span>
+                </div>
             </div>
         </header>
 
@@ -50,14 +54,14 @@
                         <div class="stat-card">
                             <div class="stat-icon">✅</div>
                             <div class="stat-content">
-                                <div class="stat-label">已通过</div>
+                                <div class="stat-label">已评测</div>
                                 <div class="stat-value" id="passed-requirements">0</div>
                             </div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-icon">❌</div>
                             <div class="stat-content">
-                                <div class="stat-label">未通过</div>
+                                <div class="stat-label">未评测</div>
                                 <div class="stat-value" id="failed-requirements">0</div>
                             </div>
                         </div>
@@ -215,10 +219,6 @@
                     <div class="page-header">
                         <h2 class="page-title">系统配置</h2>
                         <div class="config-actions">
-                            <button class="btn btn-secondary" id="reset-config-btn">
-                                <span class="btn-icon">↺</span>
-                                重置
-                            </button>
                             <button class="btn btn-primary" id="save-config-btn">
                                 <span class="btn-icon">💾</span>
                                 保存配置
@@ -226,34 +226,40 @@
                         </div>
                     </div>
 
-                    <!-- 加载指示器 -->
                     <div id="config-loading" class="loading-indicator">
                         <div class="spinner"></div>
                         <p>加载配置中...</p>
                     </div>
+                    <div id="config-error" class="error-message" style="display:none;"></div>
+                    <div id="config-success" class="success-message" style="display:none;"></div>
 
-                    <!-- 错误提示 -->
-                    <div id="config-error" class="error-message" style="display: none;"></div>
-
-                    <!-- 成功提示 -->
-                    <div id="config-success" class="success-message" style="display: none;"></div>
-
-                    <!-- 配置编辑器 -->
-                    <div id="config-editor-container" class="config-editor-container" style="display: none;">
-                        <!-- 文件切换标签 -->
-                        <div class="config-tabs">
-                            <button class="config-tab active" data-file="env">
-                                <span class="config-tab-icon">📝</span>
-                                .env (可编辑)
-                            </button>
-                            <button class="config-tab" data-file="example">
-                                <span class="config-tab-icon">📄</span>
-                                .env.example (只读)
-                            </button>
+                    <div id="config-editor-container" style="display:none;">
+                        <!-- 模型配置 -->
+                        <div class="config-section">
+                            <div class="config-section-title">模型配置</div>
+                            <div class="config-section-body">
+                                <div class="config-field">
+                                    <label class="config-field-label">API 地址</label>
+                                    <input type="text" id="model-base-url" class="config-field-input" placeholder="https://api.openai.com/v1" />
+                                </div>
+                                <div class="config-field">
+                                    <label class="config-field-label">API Key</label>
+                                    <input type="password" id="model-api-key" class="config-field-input" placeholder="sk-..." autocomplete="off" />
+                                </div>
+                                <div class="config-field">
+                                    <label class="config-field-label">模型名称</label>
+                                    <input type="text" id="model-name" class="config-field-input" placeholder="gpt-4o-mini" />
+                                </div>
+                            </div>
                         </div>
-                        
-                        <p class="config-hint">直接编辑 .env 文件内容，保存后将更新系统配置。</p>
-                        <textarea id="config-textarea" class="config-textarea" placeholder="加载配置中..."></textarea>
+
+                        <!-- 智能体配置 -->
+                        <div class="config-section">
+                            <div class="config-section-title">智能体配置</div>
+                            <div class="agents-config-grid" id="agents-config-grid">
+                                <!-- 由 JS 动态渲染 -->
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -348,6 +354,35 @@
                         保存
                     </button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 模态框：工作区选择器 -->
+    <div id="workspace-modal" class="modal workspace-modal">
+        <div class="modal-content workspace-modal-content">
+            <div class="modal-header">
+                <h3>选择工作区</h3>
+            </div>
+            <div class="modal-body">
+                <!-- 最近工作区 -->
+                <div id="recent-workspaces-section">
+                    <p class="workspace-section-label">最近打开</p>
+                    <div id="recent-workspaces-list" class="recent-workspaces-list">
+                        <div class="empty-state">暂无最近记录</div>
+                    </div>
+                </div>
+
+                <div class="workspace-divider"></div>
+
+                <!-- 手动输入 / 浏览 -->
+                <p class="workspace-section-label">打开文件夹</p>
+                <div class="workspace-input-row">
+                    <input type="text" id="workspace-path-input" class="form-control" placeholder="输入文件夹路径..." />
+                    <button class="btn btn-secondary" id="workspace-browse-btn" style="display:none;">浏览...</button>
+                    <button class="btn btn-primary" id="workspace-open-btn">打开</button>
+                </div>
+                <div id="workspace-error" class="error-message" style="display:none;margin-top:8px;"></div>
             </div>
         </div>
     </div>

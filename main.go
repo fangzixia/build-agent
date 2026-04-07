@@ -2,17 +2,25 @@ package main
 
 import (
 	"log"
+	"os"
+	"path/filepath"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 
 	"build-agent/frontend"
+	"build-agent/internal/applog"
 	"build-agent/internal/config"
 	"build-agent/internal/desktop"
 )
 
 func main() {
+	// 初始化日志（写到平台配置目录的 logs/ 子目录）
+	if base, err := os.UserConfigDir(); err == nil {
+		applog.Init(filepath.Join(base, "build-agent", "logs"))
+	}
+
 	// 加载配置
 	cfg, err := config.Load()
 	if err != nil {

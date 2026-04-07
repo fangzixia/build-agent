@@ -33,9 +33,9 @@ func newPlanExecuteService(ctx context.Context, cfg *config.Config, agentName st
 	}
 	scCfg := cfg.Agent[agentName]
 	model, err := openai.NewChatModel(ctx, &openai.ChatModelConfig{
-		APIKey:  scCfg.OpenAIAPIKey,
-		BaseURL: scCfg.OpenAIBaseURL,
-		Model:   scCfg.OpenAIModel,
+		APIKey:  cfg.Model.APIKey,
+		BaseURL: cfg.Model.BaseURL,
+		Model:   cfg.Model.Model,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create chat model: %w", err)
@@ -107,9 +107,9 @@ func newBuildAgentService(ctx context.Context, cfg *config.Config) (*Service, er
 	}
 	scCfg := cfg.Agent["build"]
 	model, err := openai.NewChatModel(ctx, &openai.ChatModelConfig{
-		APIKey:  scCfg.OpenAIAPIKey,
-		BaseURL: scCfg.OpenAIBaseURL,
-		Model:   scCfg.OpenAIModel,
+		APIKey:  cfg.Model.APIKey,
+		BaseURL: cfg.Model.BaseURL,
+		Model:   cfg.Model.Model,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create build chat model: %w", err)
@@ -181,9 +181,9 @@ func buildSubAgent(ctx context.Context, cfg *config.Config, agentName string) (a
 	}
 	scCfg := cfg.Agent[agentName]
 	model, err := openai.NewChatModel(ctx, &openai.ChatModelConfig{
-		APIKey:  scCfg.OpenAIAPIKey,
-		BaseURL: scCfg.OpenAIBaseURL,
-		Model:   scCfg.OpenAIModel,
+		APIKey:  cfg.Model.APIKey,
+		BaseURL: cfg.Model.BaseURL,
+		Model:   cfg.Model.Model,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create %s chat model: %w", agentName, err)

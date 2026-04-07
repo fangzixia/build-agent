@@ -2,13 +2,16 @@ package desktop
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
+	"build-agent/internal/applog"
 	"build-agent/internal/config"
 	"build-agent/internal/core"
 	"build-agent/internal/toolkit"
@@ -20,260 +23,148 @@ type Bridge struct {
 	cfg *config.Config
 }
 
-// NewBridge 创建新的 Bridge 实例
 func NewBridge(cfg *config.Config) *Bridge {
 	return &Bridge{cfg: cfg}
 }
 
-// Startup 在应用启动时调用
 func (b *Bridge) Startup(ctx context.Context) {
 	b.ctx = ctx
 }
 
-// Shutdown 在应用关闭时调用
-func (b *Bridge) Shutdown(ctx context.Context) {
-	// 清理资源
-}
+func (b *Bridge) Shutdown(_ context.Context) {}
 
-// RunTask 执行任务（暴露给前端）
+// RunTask 执行任务（非流式）
 func (b *Bridge) RunTask(agentName, task string) (*core.RunResult, error) {
+	applog.Bridge("RunTask", map[string]any{"agent": agentName, "task": task})
 	svc, err := core.NewService(b.ctx, b.cfg, agentName)
 	if err != nil {
+		applog.BridgeError("RunTask", err, map[string]any{"agent": agentName})
 		return nil, err
 	}
-	return svc.RunTask(b.ctx, task)
+	result, err := svc.RunTask(b.ctx, task)
+	if err != nil {
+		applog.BridgeError("RunTask", err, map[string]any{"agent": agentName})
+	} else {
+		applog.Bridge("RunTask.done", map[string]any{"agent": agentName, "has_error": result.HasError})
+	}
+	return result, err
 }
 
 // RunTaskWithProgress 执行任务并流式返回进度
 func (b *Bridge) RunTaskWithProgress(agentName, task string) (*core.RunResult, error) {
+	applog.Bridge("RunTaskWithProgress", map[string]any{"agent": agentName, "task": task})
 	svc, err := core.NewService(b.ctx, b.cfg, agentName)
 	if err != nil {
+		applog.BridgeError("RunTaskWithProgress", err, map[string]any{"agent": agentName})
 		return nil, err
 	}
-
-	// 使用 runtime.EventsEmit 发送进度事件到前端
 	result, err := svc.RunTaskWithProgress(b.ctx, task, func(log core.EventLog) {
 		runtime.EventsEmit(b.ctx, "task:progress", log)
 	})
-
+	if err != nil {
+		applog.BridgeError("RunTaskWithProgress", err, map[string]any{"agent": agentName})
+	} else {
+		applog.Bridge("RunTaskWithProgress.done", map[string]any{"agent": agentName, "has_error": result.HasError})
+	}
 	return result, err
 }
 
-// GetConfig 获取配置信息（不包含敏感数据）
-func (b *Bridge) GetConfig() (map[string]interface{}, error) {
+// GetSettings 读取用户配置
+func (b *Bridge) GetSettings() (*config.Settings, error) {
+	applog.Bridge("GetSettings", nil)
+	s, err := config.LoadSettings()
+	if err != nil {
+		applog.BridgeError("GetSettings", err, nil)
+	}
+	return s, err
+}
+
+// SaveSettings 保存用户配置并热重载
+func (b *Bridge) SaveSettings(s *config.Settings) error {
+	applog.Bridge("SaveSettings", map[string]any{"model": s.Model.Model})
+	if err := config.SaveSettings(s); err != nil {
+		applog.BridgeError("SaveSettings", err, nil)
+		return fmt.Errorf("save settings: %w", err)
+	}
+	newCfg, err := config.Load()
+	if err != nil {
+		applog.BridgeError("SaveSettings.reload", err, nil)
+		return fmt.Errorf("reload config: %w", err)
+	}
+	b.cfg = newCfg
+	return nil
+}
+
+// GetWorkspace 返回当前工作区和最近列表
+func (b *Bridge) GetWorkspace() (map[string]interface{}, error) {
+	applog.Bridge("GetWorkspace", map[string]any{"current": b.cfg.Base.WorkspaceRoot})
 	return map[string]interface{}{
-		"workspaceRoot": b.cfg.Base.WorkspaceRoot,
-		"httpAddr":      b.cfg.Base.HTTPAddr,
-		"configPath":    b.getConfigFilePath(), // 添加配置文件路径
+		"current": b.cfg.Base.WorkspaceRoot,
+		"recent":  loadWorkspaceHistory(),
 	}, nil
 }
 
-// GetEnvConfig 读取 .env 文件内容
-func (b *Bridge) GetEnvConfig() (*config.EnvConfig, error) {
-	// 获取配置文件路径（优先使用用户配置目录）
-	envPath := b.getConfigFilePath()
-
-	// 创建解析器
-	parser := config.NewEnvParser()
-
-	// 读取 .env 文件
-	content, err := os.ReadFile(envPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			// 文件不存在，返回默认配置模板
-			return b.getDefaultEnvConfig(), nil
-		}
-		return nil, fmt.Errorf("failed to read config file: %w", err)
-	}
-
-	// 解析配置
-	envConfig, err := parser.Parse(string(content))
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse config file: %w", err)
-	}
-
-	return envConfig, nil
-}
-
-// getConfigFilePath 获取配置文件路径
-func (b *Bridge) getConfigFilePath() string {
-	// 使用用户主目录下的配置文件
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		// 如果获取失败，使用当前工作目录
-		cwd, _ := os.Getwd()
-		return filepath.Join(cwd, ".env")
-	}
-
-	// 在用户主目录下创建 .build-agent 目录
-	configDir := filepath.Join(homeDir, ".build-agent")
-	os.MkdirAll(configDir, 0755)
-
-	return filepath.Join(configDir, "config.env")
-}
-
-// getDefaultEnvConfig 返回默认配置模板
-func (b *Bridge) getDefaultEnvConfig() *config.EnvConfig {
-	return &config.EnvConfig{
-		Sections: map[string][]config.EnvEntry{
-			"Base": {
-				{Key: "WORKSPACE_ROOT", Value: "", Section: "Base", Comment: "项目工作目录"},
-				{Key: "CMD_TIMEOUT_SEC", Value: "90", Section: "Base", Comment: "命令超时时间（秒）"},
-				{Key: "HTTP_ADDR", Value: ":8080", Section: "Base", Comment: "HTTP 服务地址"},
-			},
-			"Code": {
-				{Key: "CODE_OPENAI_BASE_URL", Value: "https://api.openai.com/v1", Section: "Code", Comment: "编码执行 - OpenAI API 地址"},
-				{Key: "CODE_OPENAI_API_KEY", Value: "", Section: "Code", Comment: "编码执行 - OpenAI API Key"},
-				{Key: "CODE_OPENAI_MODEL", Value: "gpt-4o-mini", Section: "Code", Comment: "编码执行 - 模型名称"},
-				{Key: "CODE_EXECUTOR_MAX_ITERATIONS", Value: "100", Section: "Code", Comment: "编码执行 - 最大迭代次数"},
-				{Key: "CODE_PLAN_EXECUTE_MAX_ITERATIONS", Value: "100", Section: "Code", Comment: "编码执行 - 计划执行最大迭代次数"},
-			},
-			"Build": {
-				{Key: "BUILD_OPENAI_BASE_URL", Value: "https://api.openai.com/v1", Section: "Build", Comment: "完整构建 - OpenAI API 地址"},
-				{Key: "BUILD_OPENAI_API_KEY", Value: "", Section: "Build", Comment: "完整构建 - OpenAI API Key"},
-				{Key: "BUILD_OPENAI_MODEL", Value: "gpt-4o-mini", Section: "Build", Comment: "完整构建 - 模型名称"},
-				{Key: "BUILD_EXECUTOR_MAX_ITERATIONS", Value: "20", Section: "Build", Comment: "完整构建 - 最大迭代次数"},
-				{Key: "BUILD_PLAN_EXECUTE_MAX_ITERATIONS", Value: "10", Section: "Build", Comment: "完整构建 - 计划执行最大迭代次数"},
-				{Key: "BUILD_MAX_RETRIES", Value: "5", Section: "Build", Comment: "完整构建 - 最大重试次数"},
-			},
-			"Analysis": {
-				{Key: "ANALYSIS_OPENAI_BASE_URL", Value: "https://api.openai.com/v1", Section: "Analysis", Comment: "项目分析 - OpenAI API 地址"},
-				{Key: "ANALYSIS_OPENAI_API_KEY", Value: "", Section: "Analysis", Comment: "项目分析 - OpenAI API Key"},
-				{Key: "ANALYSIS_OPENAI_MODEL", Value: "gpt-4o-mini", Section: "Analysis", Comment: "项目分析 - 模型名称"},
-				{Key: "ANALYSIS_EXECUTOR_MAX_ITERATIONS", Value: "100", Section: "Analysis", Comment: "项目分析 - 最大迭代次数"},
-				{Key: "ANALYSIS_PLAN_EXECUTE_MAX_ITERATIONS", Value: "100", Section: "Analysis", Comment: "项目分析 - 计划执行最大迭代次数"},
-			},
-			"Eval": {
-				{Key: "EVAL_OPENAI_BASE_URL", Value: "https://api.openai.com/v1", Section: "Eval", Comment: "验收评测 - OpenAI API 地址"},
-				{Key: "EVAL_OPENAI_API_KEY", Value: "", Section: "Eval", Comment: "验收评测 - OpenAI API Key"},
-				{Key: "EVAL_OPENAI_MODEL", Value: "gpt-4o-mini", Section: "Eval", Comment: "验收评测 - 模型名称"},
-				{Key: "EVAL_EXECUTOR_MAX_ITERATIONS", Value: "100", Section: "Eval", Comment: "验收评测 - 最大迭代次数"},
-				{Key: "EVAL_PLAN_EXECUTE_MAX_ITERATIONS", Value: "100", Section: "Eval", Comment: "验收评测 - 计划执行最大迭代次数"},
-				{Key: "EVAL_PASS_SCORE_THRESHOLD", Value: "80", Section: "Eval", Comment: "验收评测 - 通过分数阈值"},
-			},
-			"Requirements": {
-				{Key: "REQUIREMENTS_OPENAI_BASE_URL", Value: "https://api.openai.com/v1", Section: "Requirements", Comment: "需求分析 - OpenAI API 地址"},
-				{Key: "REQUIREMENTS_OPENAI_API_KEY", Value: "", Section: "Requirements", Comment: "需求分析 - OpenAI API Key"},
-				{Key: "REQUIREMENTS_OPENAI_MODEL", Value: "gpt-4o-mini", Section: "Requirements", Comment: "需求分析 - 模型名称"},
-				{Key: "REQUIREMENTS_EXECUTOR_MAX_ITERATIONS", Value: "100", Section: "Requirements", Comment: "需求分析 - 最大迭代次数"},
-				{Key: "REQUIREMENTS_PLAN_EXECUTE_MAX_ITERATIONS", Value: "100", Section: "Requirements", Comment: "需求分析 - 计划执行最大迭代次数"},
-			},
-		},
-	}
-}
-
-// SaveEnvConfig 保存 .env 文件
-func (b *Bridge) SaveEnvConfig(envConfig *config.EnvConfig) error {
-	// 获取配置文件路径
-	envPath := b.getConfigFilePath()
-
-	// 创建解析器
-	parser := config.NewEnvParser()
-
-	// 序列化配置
-	content, err := parser.Serialize(envConfig)
-	if err != nil {
-		return fmt.Errorf("failed to serialize config: %w", err)
-	}
-
-	// 原子性写入文件
-	tmpPath := envPath + ".tmp"
-	if err := os.WriteFile(tmpPath, []byte(content), 0644); err != nil {
-		return fmt.Errorf("failed to write temp file: %w", err)
-	}
-
-	// 验证写入成功后重命名
-	if err := os.Rename(tmpPath, envPath); err != nil {
-		// 清理临时文件
-		os.Remove(tmpPath)
-		return fmt.Errorf("failed to rename temp file: %w", err)
-	}
-
-	// 保存成功后，重新加载配置到环境变量
-	if err := b.reloadConfig(envPath); err != nil {
-		return fmt.Errorf("failed to reload config: %w", err)
-	}
-
-	return nil
-}
-
-// reloadConfig 重新加载配置到环境变量
-func (b *Bridge) reloadConfig(envPath string) error {
-	// 读取配置文件
-	content, err := os.ReadFile(envPath)
-	if err != nil {
+// SetWorkspace 切换工作区
+func (b *Bridge) SetWorkspace(path string) error {
+	applog.Bridge("SetWorkspace", map[string]any{"path": path})
+	info, err := os.Stat(path)
+	if err != nil || !info.IsDir() {
+		err := fmt.Errorf("path does not exist or is not a directory")
+		applog.BridgeError("SetWorkspace", err, map[string]any{"path": path})
 		return err
 	}
-
-	// 解析并设置环境变量
-	lines := strings.Split(string(content), "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) == 2 {
-			key := strings.TrimSpace(parts[0])
-			value := strings.TrimSpace(parts[1])
-			os.Setenv(key, value)
-		}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		applog.BridgeError("SetWorkspace", err, map[string]any{"path": path})
+		return fmt.Errorf("invalid path")
 	}
-
-	// 重新加载应用配置
+	if err := os.Setenv("WORKSPACE_ROOT", abs); err != nil {
+		applog.BridgeError("SetWorkspace", err, nil)
+		return err
+	}
 	newCfg, err := config.Load()
 	if err != nil {
-		return fmt.Errorf("failed to reload application config: %w", err)
+		applog.BridgeError("SetWorkspace.reload", err, nil)
+		return err
 	}
-
-	// 更新 bridge 的配置
 	b.cfg = newCfg
-
+	addToWorkspaceHistory(abs)
 	return nil
 }
 
-// GetEnvConfigExample 读取 .env.example 文件
-// ReadFile 读取工作目录内的文件
+// OpenFolderDialog 打开系统文件夹选择对话框
+func (b *Bridge) OpenFolderDialog() (string, error) {
+	return runtime.OpenDirectoryDialog(b.ctx, runtime.OpenDialogOptions{
+		Title: "选择工作区文件夹",
+	})
+}
+
+// ReadFile 读取工作区内的文件
 func (b *Bridge) ReadFile(path string) (string, error) {
-	// 使用 toolkit.resolveSafePath 验证路径
 	safePath, err := toolkit.ResolveSafePath(b.cfg.Base.WorkspaceRoot, path)
 	if err != nil {
 		return "", fmt.Errorf("invalid path: %w", err)
 	}
-
-	// 读取文件内容
 	content, err := os.ReadFile(safePath)
 	if err != nil {
 		return "", fmt.Errorf("read file: %w", err)
 	}
-
 	return string(content), nil
 }
 
-// SaveFile 保存文件到工作目录
+// SaveFile 保存文件到工作区
 func (b *Bridge) SaveFile(path, content string) error {
-	// 使用 toolkit.resolveSafePath 验证路径
 	safePath, err := toolkit.ResolveSafePath(b.cfg.Base.WorkspaceRoot, path)
 	if err != nil {
 		return fmt.Errorf("invalid path: %w", err)
 	}
-
-	// 确保目录存在
-	dir := filepath.Dir(safePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(safePath), 0755); err != nil {
 		return fmt.Errorf("create directory: %w", err)
 	}
-
-	// 写入文件
-	if err := os.WriteFile(safePath, []byte(content), 0644); err != nil {
-		return fmt.Errorf("write file: %w", err)
-	}
-
-	return nil
+	return os.WriteFile(safePath, []byte(content), 0644)
 }
 
-// FileInfo 文件信息结构
+// FileInfo 文件信息
 type FileInfo struct {
 	Name  string `json:"name"`
 	IsDir bool   `json:"isDir"`
@@ -282,32 +173,157 @@ type FileInfo struct {
 
 // ListFiles 列出目录内容
 func (b *Bridge) ListFiles(path string) ([]FileInfo, error) {
-	// 使用 toolkit.resolveSafePath 验证路径
 	safePath, err := toolkit.ResolveSafePath(b.cfg.Base.WorkspaceRoot, path)
 	if err != nil {
 		return nil, fmt.Errorf("invalid path: %w", err)
 	}
-
-	// 读取目录内容
 	entries, err := os.ReadDir(safePath)
 	if err != nil {
 		return nil, fmt.Errorf("read directory: %w", err)
 	}
-
-	// 转换为 FileInfo 列表
 	result := make([]FileInfo, 0, len(entries))
 	for _, entry := range entries {
 		info, err := entry.Info()
 		if err != nil {
-			continue // 跳过无法获取信息的文件
+			continue
 		}
+		result = append(result, FileInfo{Name: entry.Name(), IsDir: entry.IsDir(), Size: info.Size()})
+	}
+	return result, nil
+}
 
-		result = append(result, FileInfo{
-			Name:  entry.Name(),
-			IsDir: entry.IsDir(),
-			Size:  info.Size(),
+// --- 工作区历史 ---
+
+type workspaceEntry struct {
+	Path     string    `json:"path"`
+	LastUsed time.Time `json:"lastUsed"`
+}
+
+func workspaceHistoryPath() string {
+	base, err := os.UserConfigDir()
+	if err != nil {
+		base, _ = os.UserHomeDir()
+	}
+	dir := filepath.Join(base, "build-agent")
+	_ = os.MkdirAll(dir, 0755)
+	return filepath.Join(dir, "workspaces.json")
+}
+
+func loadWorkspaceHistory() []workspaceEntry {
+	p := workspaceHistoryPath()
+	if p == "" {
+		return nil
+	}
+	data, err := os.ReadFile(p)
+	if err != nil {
+		return nil
+	}
+	var result struct {
+		Recent []workspaceEntry `json:"recent"`
+	}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil
+	}
+	return result.Recent
+}
+
+func addToWorkspaceHistory(path string) {
+	existing := loadWorkspaceHistory()
+	filtered := existing[:0]
+	for _, e := range existing {
+		if e.Path != path {
+			filtered = append(filtered, e)
+		}
+	}
+	all := append([]workspaceEntry{{Path: path, LastUsed: time.Now()}}, filtered...)
+	if len(all) > 10 {
+		all = all[:10]
+	}
+	p := workspaceHistoryPath()
+	if p == "" {
+		return
+	}
+	data, _ := json.MarshalIndent(map[string]interface{}{"recent": all}, "", "  ")
+	_ = os.WriteFile(p, data, 0644)
+}
+
+// RequirementInfo 需求文件信息
+type RequirementInfo struct {
+	ID       string `json:"id"`
+	Path     string `json:"path"`
+	Title    string `json:"title"`
+	FullPath string `json:"fullPath"`
+}
+
+// EvaluationInfo 评测文件信息
+type EvaluationInfo struct {
+	ID            string `json:"id"`
+	RequirementID string `json:"requirementId"`
+	Path          string `json:"path"`
+	FullPath      string `json:"fullPath"`
+}
+
+// GetRequirements 列出工作区 .spec 下的需求文件
+func (b *Bridge) GetRequirements() ([]RequirementInfo, error) {
+	specDir := filepath.Join(b.cfg.Base.WorkspaceRoot, ".spec")
+	entries, err := os.ReadDir(specDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []RequirementInfo{}, nil
+		}
+		return nil, err
+	}
+	var result []RequirementInfo
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+			continue
+		}
+		if !strings.HasPrefix(e.Name(), "REQ-") {
+			continue
+		}
+		id := strings.TrimSuffix(e.Name(), ".md")
+		relPath := filepath.ToSlash(filepath.Join(".spec", e.Name()))
+		result = append(result, RequirementInfo{
+			ID:       id,
+			Path:     relPath,
+			Title:    id,
+			FullPath: filepath.Join(specDir, e.Name()),
 		})
 	}
+	return result, nil
+}
 
+// GetEvaluations 列出工作区 .spec 下的评测文件
+func (b *Bridge) GetEvaluations() ([]EvaluationInfo, error) {
+	specDir := filepath.Join(b.cfg.Base.WorkspaceRoot, ".spec")
+	entries, err := os.ReadDir(specDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []EvaluationInfo{}, nil
+		}
+		return nil, err
+	}
+	var result []EvaluationInfo
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+			continue
+		}
+		if !strings.HasPrefix(e.Name(), "EVAL-") {
+			continue
+		}
+		name := strings.TrimSuffix(e.Name(), ".md") // e.g. EVAL-REQ-00001-01
+		parts := strings.SplitN(name, "-", 4)       // ["EVAL", "REQ", "00001", "01"]
+		reqID := ""
+		if len(parts) >= 3 {
+			reqID = "REQ-" + parts[2]
+		}
+		relPath := filepath.ToSlash(filepath.Join(".spec", e.Name()))
+		result = append(result, EvaluationInfo{
+			ID:            name,
+			RequirementID: reqID,
+			Path:          relPath,
+			FullPath:      filepath.Join(specDir, e.Name()),
+		})
+	}
 	return result, nil
 }

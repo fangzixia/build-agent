@@ -292,13 +292,12 @@ async function loadDashboard() {
 
 function updateStats() {
     const total = state.requirements.length;
-    const passed = state.requirements.filter(r => r.status === 'passed').length;
-    const failed = state.requirements.filter(r => r.status === 'failed').length;
-    const passRate = total > 0 ? Math.round((passed / total) * 100) : 0;
+    const evalCount = state.evaluations.length;
+    const passRate = total > 0 ? Math.round((evalCount / total) * 100) : 0;
 
     $('#total-requirements').textContent = total;
-    $('#passed-requirements').textContent = passed;
-    $('#failed-requirements').textContent = failed;
+    $('#passed-requirements').textContent = evalCount;
+    $('#failed-requirements').textContent = Math.max(0, total - evalCount);
     $('#pass-rate').textContent = `${passRate}%`;
 }
 
@@ -315,13 +314,9 @@ function renderRecentRequirements() {
         <div class="requirement-item" data-id="${req.id}">
             <div class="requirement-header">
                 <span class="requirement-id">${req.id}</span>
-                <span class="requirement-status ${req.status}">${getStatusText(req.status)}</span>
             </div>
-            <div class="requirement-title">${req.title}</div>
             <div class="requirement-meta">
-                <span>📅 ${formatDate(req.createdAt)}</span>
-                ${req.score ? `<span>📊 ${req.score}/100</span>` : ''}
-                ${req.rounds ? `<span>🔄 ${req.rounds} 轮</span>` : ''}
+                <span>📄 ${req.path}</span>
             </div>
         </div>
     `).join('');
@@ -398,13 +393,9 @@ function renderRequirementsList() {
         <div class="requirement-item" data-id="${req.id}">
             <div class="requirement-header">
                 <span class="requirement-id">${req.id}</span>
-                <span class="requirement-status ${req.status}">${getStatusText(req.status)}</span>
             </div>
-            <div class="requirement-title">${req.title}</div>
             <div class="requirement-meta">
-                <span>📅 ${formatDate(req.createdAt)}</span>
-                ${req.score ? `<span>📊 ${req.score}/100</span>` : ''}
-                ${req.rounds ? `<span>🔄 ${req.rounds} 轮</span>` : ''}
+                <span>� ${req.path}</span>
             </div>
         </div>
     `).join('');
@@ -514,9 +505,8 @@ async function setupFormFields(action) {
 // 分析项目的字段
 async function addAnalysisFields(formBody, actionsDiv) {
     try {
-        const config = await api.call('/v1/config');
-        const designPath = config.analysisDesignSpecPath || '.spec/design.md';
-        
+        const designPath = '.spec/design.md';
+
         // 检查文件是否存在
         let fileExists = false;
         try {
@@ -573,7 +563,7 @@ async function addRequirementsFields(formBody, actionsDiv) {
                     <select id="existing-req-select" class="form-control">
                         <option value="">-- 不参考 --</option>
                         ${state.requirements.map(req => 
-                            `<option value="${req.path}">${req.id} - ${req.title}</option>`
+                            `<option value="${req.path}">${req.id}</option>`
                         ).join('')}
                     </select>
                     <button type="button" class="btn btn-secondary btn-sm" id="view-req-file-btn" style="display: none;">
@@ -640,7 +630,7 @@ async function addCodeFields(formBody, actionsDiv) {
                 <select id="code-req-select" class="form-control">
                     <option value="">-- 使用最新需求 --</option>
                     ${state.requirements.map(req => 
-                        `<option value="${req.path}">${req.id} - ${req.title}</option>`
+                        `<option value="${req.path}">${req.id}</option>`
                     ).join('')}
                 </select>
                 <button type="button" class="btn btn-secondary btn-sm" id="view-code-req-btn" style="display: none;">
@@ -700,7 +690,7 @@ async function addEvalFields(formBody, actionsDiv) {
                 <select id="eval-req-select" class="form-control">
                     <option value="">-- 使用最新需求 --</option>
                     ${state.requirements.map(req => 
-                        `<option value="${req.path}">${req.id} - ${req.title}</option>`
+                        `<option value="${req.path}">${req.id}</option>`
                     ).join('')}
                 </select>
                 <button type="button" class="btn btn-secondary btn-sm" id="view-eval-req-btn" style="display: none;">
@@ -792,7 +782,7 @@ async function addBuildFields(formBody, actionsDiv) {
                 <select id="build-req-select" class="form-control">
                     <option value="">-- 使用最新需求 --</option>
                     ${state.requirements.map(req => 
-                        `<option value="${req.path}">${req.id} - ${req.title}</option>`
+                        `<option value="${req.path}">${req.id}</option>`
                     ).join('')}
                 </select>
                 <button type="button" class="btn btn-secondary btn-sm" id="view-build-req-btn" style="display: none;">
@@ -1037,7 +1027,7 @@ async function loadHistory() {
 function updateHistoryFilters() {
     const filterReq = $('#filter-requirement');
     filterReq.innerHTML = '<option value="">全部需求</option>' +
-        state.requirements.map(req => `<option value="${req.id}">${req.id} - ${req.title}</option>`).join('');
+        state.requirements.map(req => `<option value="${req.id}">${req.id}</option>`).join('');
 }
 
 function renderHistoryList() {
@@ -1048,25 +1038,25 @@ function renderHistoryList() {
         return;
     }
 
-    container.innerHTML = state.evaluations.map(eval => `
+    container.innerHTML = state.evaluations.map(eval => {
+        const parts = eval.id.split('-');
+        const round = parts[parts.length - 1] || '?';
+        return `
         <div class="history-item" data-path="${eval.path}">
             <div class="history-header">
-                <span class="history-title">${eval.requirementId} - 第 ${eval.round} 轮验收</span>
-                <span class="history-score ${eval.passed ? 'passed' : 'failed'}">${eval.score}/100</span>
+                <span class="history-title">${eval.requirementId} - 第 ${round} 轮验收</span>
             </div>
             <div class="history-meta">
-                <span>📅 ${formatDate(eval.evaluatedAt)}</span>
-                <span>📊 ${eval.passed ? '✅ 已通过' : '❌ 未通过'}</span>
+                <span>📄 ${eval.path}</span>
             </div>
-            <div class="history-summary">${eval.summary || '无摘要'}</div>
             <div class="history-actions">
                 <button class="btn btn-secondary btn-sm view-eval-btn" data-path="${eval.path}">
                     <span class="btn-icon">👁️</span>
                     查看详情
                 </button>
             </div>
-        </div>
-    `).join('');
+        </div>`;
+    }).join('');
 
     // 绑定查看按钮
     container.querySelectorAll('.view-eval-btn').forEach(btn => {
@@ -1155,11 +1145,17 @@ function showRequirementDetail(reqId) {
     if (!req) return;
     
     state.currentRequirement = req;
-    
-    $('#requirement-detail-title').textContent = `${req.id} - ${req.title}`;
-    $('#requirement-detail-content').innerHTML = formatMarkdown(req.content || '暂无内容');
-    
+
+    $('#requirement-detail-title').textContent = req.id;
+    $('#requirement-detail-content').innerHTML = '<div class="empty-state">加载中...</div>';
+
     showModal('requirement-detail-modal');
+
+    api.readFile(req.path).then(res => {
+        $('#requirement-detail-content').innerHTML = formatMarkdown(res.content || '暂无内容');
+    }).catch(err => {
+        $('#requirement-detail-content').innerHTML = `<div class="error-message">加载失败: ${err.message}</div>`;
+    });
 }
 
 // 工具函数
@@ -1393,427 +1389,135 @@ document.addEventListener('DOMContentLoaded', () => {
     initNavigation();
     initExecution();
     initModals();
-    
-    // 加载默认页面
-    loadDashboard();
+
+    // 事件绑定立即执行，不等 Bridge
+    WorkspaceSelector.bindEvents();
+
+    // Bridge 调用等 Wails runtime 就绪
+    function waitForWails(cb) {
+        if (window.go && window.go.desktop && window.go.desktop.Bridge) {
+            cb();
+        } else {
+            setTimeout(() => waitForWails(cb), 50);
+        }
+    }
+    waitForWails(() => WorkspaceSelector.loadData());
 });
 
 // ==================== 配置页面功能 ====================
 
-// 配置项元数据
-const CONFIG_METADATA = {
-    // Base 配置
-    'WORKSPACE_ROOT': {
-        label: '工作空间根目录',
-        description: '项目的根目录路径',
-        type: 'path',
-        required: true,
-        section: 'Base',
-        fullWidth: true,
-    },
-    'CMD_TIMEOUT_SEC': {
-        label: '命令超时时间（秒）',
-        description: '执行命令的最大超时时间',
-        type: 'number',
-        required: true,
-        section: 'Base',
-    },
-    'HTTP_ADDR': {
-        label: 'HTTP 服务地址',
-        description: 'HTTP 服务监听地址，格式: :端口 或 主机:端口',
-        type: 'text',
-        required: true,
-        section: 'Base',
-    },
-    
-    // Agent 通用配置模板
-    '_OPENAI_BASE_URL': {
-        label: 'OpenAI API 地址',
-        description: 'OpenAI API 的基础 URL',
-        type: 'url',
-        required: true,
-        fullWidth: true,
-    },
-    '_OPENAI_API_KEY': {
-        label: 'OpenAI API 密钥',
-        description: 'OpenAI API 的访问密钥',
-        type: 'password',
-        required: true,
-        fullWidth: true,
-    },
-    '_OPENAI_MODEL': {
-        label: '模型名称',
-        description: '使用的 AI 模型名称',
-        type: 'text',
-        required: true,
-    },
-    '_EXECUTOR_MAX_ITERATIONS': {
-        label: '执行器最大迭代次数',
-        description: '执行器的最大迭代次数',
-        type: 'number',
-        required: true,
-    },
-    '_PLAN_EXECUTE_MAX_ITERATIONS': {
-        label: '计划执行最大迭代次数',
-        description: '计划执行的最大迭代次数',
-        type: 'number',
-        required: true,
-    },
-    '_DESIGN_SPEC_PATH': {
-        label: '设计文档路径',
-        description: '设计规格文档的路径',
-        type: 'path',
-        required: false,
-    },
-    
-    // 特殊配置
-    'EVAL_REQUIREMENTS_SPEC_PATH': {
-        label: '需求文档路径',
-        description: 'EVAL Agent 使用的需求文档路径',
-        type: 'path',
-        required: false,
-        section: 'EVAL',
-    },
-    'EVAL_PASS_SCORE_THRESHOLD': {
-        label: '通过分数阈值',
-        description: '验收通过的最低分数',
-        type: 'number',
-        required: false,
-        section: 'EVAL',
-    },
-    'REQUIREMENTS_SPEC_DIR': {
-        label: '规格文档目录',
-        description: 'REQUIREMENTS Agent 使用的规格文档目录',
-        type: 'path',
-        required: false,
-        section: 'REQUIREMENTS',
-    },
-    'BUILD_MAX_RETRIES': {
-        label: '最大重试次数',
-        description: 'BUILD Agent 的最大重试次数',
-        type: 'number',
-        required: true,
-        section: 'BUILD',
-    },
-};
-
-// 区块配置
-const SECTION_CONFIG = {
-    'Base': {
-        title: '基础配置',
-        icon: '⚙️',
-        order: 0,
-    },
-    'CODE': {
-        title: 'CODE Agent',
-        icon: '💻',
-        order: 1,
-    },
-    'ANALYSIS': {
-        title: 'ANALYSIS Agent',
-        icon: '🔍',
-        order: 2,
-    },
-    'EVAL': {
-        title: 'EVAL Agent',
-        icon: '✓',
-        order: 3,
-    },
-    'REQUIREMENTS': {
-        title: 'REQUIREMENTS Agent',
-        icon: '📝',
-        order: 4,
-    },
-    'BUILD': {
-        title: 'BUILD Agent',
-        icon: '🔄',
-        order: 5,
-    },
-};
-
-// 配置页面状态
-const configPageState = {
-    originalConfig: null,
-    currentConfig: null,
-    modified: false,
-    loading: false,
-};
-
-// 配置页面控制器 - 简化版（文本编辑）
 class ConfigPageController {
     constructor() {
-        this.envContent = '';
-        this.exampleContent = '';
-        this.originalEnvContent = '';
-        this.currentFile = 'env'; // 'env' or 'example'
-        this.initEventListeners();
-    }
-
-    initEventListeners() {
+        this.settings = null;
+        this.agentLabels = {
+            analysis:     '项目分析',
+            requirements: '需求分析',
+            code:         '编码执行',
+            eval:         '验收评测',
+            build:        '完整构建',
+        };
         $('#save-config-btn')?.addEventListener('click', () => this.saveConfig());
-        $('#reset-config-btn')?.addEventListener('click', () => this.resetConfig());
-        
-        // 文件切换标签
-        document.querySelectorAll('.config-tab').forEach(tab => {
-            tab.addEventListener('click', () => {
-                const file = tab.dataset.file;
-                this.switchFile(file);
-            });
-        });
-    }
-
-    switchFile(file) {
-        if (this.currentFile === file) return;
-        
-        // 保存当前编辑内容
-        const textarea = $('#config-textarea');
-        if (this.currentFile === 'env') {
-            this.envContent = textarea.value;
-        }
-        
-        // 切换文件
-        this.currentFile = file;
-        
-        // 更新标签状态
-        document.querySelectorAll('.config-tab').forEach(tab => {
-            tab.classList.toggle('active', tab.dataset.file === file);
-        });
-        
-        // 更新编辑器内容和状态
-        if (file === 'env') {
-            textarea.value = this.envContent;
-            textarea.readOnly = false;
-            this.updateHint('.env 文件是实际使用的配置文件，修改后点击保存生效。', '#3b82f6', '#f3f4f6');
-            $('#save-config-btn').disabled = false;
-            $('#reset-config-btn').disabled = false;
-        } else {
-            textarea.value = this.exampleContent;
-            textarea.readOnly = true;
-            this.updateHint('.env.example 是配置模板文件，仅供参考，不可编辑。', '#6b7280', '#f9fafb');
-            $('#save-config-btn').disabled = true;
-            $('#reset-config-btn').disabled = true;
-        }
-    }
-
-    updateHint(text, borderColor, bgColor) {
-        const hint = $('.config-hint');
-        hint.textContent = text;
-        hint.style.borderLeftColor = borderColor;
-        hint.style.backgroundColor = bgColor;
     }
 
     async loadConfig() {
         const loadingEl = $('#config-loading');
         const errorEl = $('#config-error');
-        const editorContainer = $('#config-editor-container');
+        const container = $('#config-editor-container');
 
         loadingEl.style.display = 'block';
         errorEl.style.display = 'none';
-        editorContainer.style.display = 'none';
+        container.style.display = 'none';
 
         try {
-            // 加载 .env 文件 - 使用 WailsAPI
-            const envConfig = await WailsAPI.getEnvConfig();
-            this.envContent = this.configToEnvText(envConfig);
-            this.originalEnvContent = this.envContent;
-
-            // 显示在文本编辑器中
-            const textarea = $('#config-textarea');
-            textarea.value = this.envContent;
-            textarea.readOnly = false;
-
-            // 检查是否为空配置（.env 文件不存在）
-            if (!this.envContent.trim() || Object.keys(envConfig.sections || {}).length === 0) {
-                this.updateHint('⚠️ .env 文件不存在或为空，建议参考 .env.example 模板进行配置。', '#f59e0b', '#fffbeb');
-            } else {
-                this.updateHint('.env 文件是实际使用的配置文件，修改后点击保存生效。', '#3b82f6', '#f3f4f6');
-            }
-
+            this.settings = await WailsAPI.getSettings();
+            this.render();
             loadingEl.style.display = 'none';
-            editorContainer.style.display = 'block';
-        } catch (error) {
-            console.error('加载配置失败:', error);
+            container.style.display = 'block';
+        } catch (e) {
             loadingEl.style.display = 'none';
-            errorEl.textContent = `加载配置失败: ${error.message}`;
+            errorEl.textContent = `加载配置失败: ${e.message}`;
             errorEl.style.display = 'block';
         }
     }
 
-    configToEnvText(config) {
-        let text = '';
-        const sections = config.sections || {};
-        const sectionOrder = ['Base', 'CODE', 'ANALYSIS', 'EVAL', 'REQUIREMENTS', 'BUILD'];
+    render() {
+        const s = this.settings;
+        $('#model-base-url').value = s.model?.baseUrl || '';
+        $('#model-api-key').value  = s.model?.apiKey  || '';
+        $('#model-name').value     = s.model?.model   || '';
 
-        sectionOrder.forEach((sectionName, index) => {
-            const entries = sections[sectionName];
-            if (!entries || entries.length === 0) return;
-
-            // 添加区块注释
-            if (index > 0) {
-                text += '\n';
-            }
-            if (sectionName !== 'Base') {
-                text += `# ${sectionName.toLowerCase()} scenario (OPENAI fully isolated)\n`;
-            }
-
-            // 添加配置项
-            entries.forEach(entry => {
-                if (entry.comment && !entry.comment.includes('scenario')) {
-                    text += `# ${entry.comment}\n`;
-                }
-                text += `${entry.key}=${entry.value}\n`;
-            });
-        });
-
-        return text;
+        const grid = $('#agents-config-grid');
+        const agents = s.agents || {};
+        grid.innerHTML = Object.entries(this.agentLabels).map(([key, label]) => {
+            const a = agents[key] || {};
+            return `
+            <div class="agent-config-card">
+                <div class="agent-config-name">${label}</div>
+                <div class="agent-config-fields">
+                    <div class="config-field">
+                        <label class="config-field-label">执行最大迭代次数</label>
+                        <input type="number" min="1" class="config-field-input agent-field"
+                            data-agent="${key}" data-key="executorMaxIterations"
+                            value="${a.executorMaxIterations ?? 100}" />
+                    </div>
+                    <div class="config-field">
+                        <label class="config-field-label">计划执行最大迭代次数</label>
+                        <input type="number" min="1" class="config-field-input agent-field"
+                            data-agent="${key}" data-key="planExecuteMaxIterations"
+                            value="${a.planExecuteMaxIterations ?? 10}" />
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
     }
 
-    envTextToConfig(text) {
-        const lines = text.split('\n');
-        const config = { sections: {} };
-        let currentSection = 'Base';
-        let currentComment = '';
-
-        lines.forEach(line => {
-            line = line.trim();
-
-            // 跳过空行
-            if (!line) {
-                currentComment = '';
-                return;
-            }
-
-            // 处理注释
-            if (line.startsWith('#')) {
-                const comment = line.substring(1).trim();
-                if (comment.toLowerCase().includes('scenario') || comment.toLowerCase().includes('agent')) {
-                    // 区块注释
-                    if (comment.toLowerCase().includes('code')) currentSection = 'CODE';
-                    else if (comment.toLowerCase().includes('analysis')) currentSection = 'ANALYSIS';
-                    else if (comment.toLowerCase().includes('eval')) currentSection = 'EVAL';
-                    else if (comment.toLowerCase().includes('requirements')) currentSection = 'REQUIREMENTS';
-                    else if (comment.toLowerCase().includes('build')) currentSection = 'BUILD';
-                } else {
-                    currentComment = comment;
-                }
-                return;
-            }
-
-            // 解析键值对
-            const equalIndex = line.indexOf('=');
-            if (equalIndex === -1) return;
-
-            const key = line.substring(0, equalIndex).trim();
-            const value = line.substring(equalIndex + 1).trim();
-
-            // 推断区块
-            if (currentSection === 'Base') {
-                if (key.startsWith('CODE_')) currentSection = 'CODE';
-                else if (key.startsWith('ANALYSIS_')) currentSection = 'ANALYSIS';
-                else if (key.startsWith('EVAL_')) currentSection = 'EVAL';
-                else if (key.startsWith('REQUIREMENTS_')) currentSection = 'REQUIREMENTS';
-                else if (key.startsWith('BUILD_')) currentSection = 'BUILD';
-            }
-
-            if (!config.sections[currentSection]) {
-                config.sections[currentSection] = [];
-            }
-
-            config.sections[currentSection].push({
-                key,
-                value,
-                comment: currentComment,
-                section: currentSection,
-            });
-
-            currentComment = '';
+    collectSettings() {
+        const s = {
+            model: {
+                baseUrl: $('#model-base-url').value.trim(),
+                apiKey:  $('#model-api-key').value.trim(),
+                model:   $('#model-name').value.trim(),
+            },
+            agents: {},
+        };
+        document.querySelectorAll('.agent-field').forEach(input => {
+            const agent = input.dataset.agent;
+            const key   = input.dataset.key;
+            if (!s.agents[agent]) s.agents[agent] = {};
+            s.agents[agent][key] = parseInt(input.value, 10) || 1;
         });
-
-        return config;
+        return s;
     }
 
     async saveConfig() {
-        if (this.currentFile !== 'env') {
-            return; // 只能保存 .env 文件
-        }
-
         const successEl = $('#config-success');
-        const errorEl = $('#config-error');
-        const saveBtn = $('#save-config-btn');
-        const textarea = $('#config-textarea');
+        const errorEl   = $('#config-error');
+        const btn       = $('#save-config-btn');
 
-        // 隐藏之前的消息
         successEl.style.display = 'none';
-        errorEl.style.display = 'none';
-
-        // 禁用保存按钮
-        saveBtn.disabled = true;
-        saveBtn.innerHTML = '<span class="btn-icon">⏳</span> 保存中...';
+        errorEl.style.display   = 'none';
+        btn.disabled = true;
+        btn.innerHTML = '<span class="btn-icon">⏳</span> 保存中...';
 
         try {
-            // 将文本转换为配置对象
-            const config = this.envTextToConfig(textarea.value);
-
-            // 使用 WailsAPI 保存配置
-            const result = await WailsAPI.saveEnvConfig(config);
-            
-            // 更新原始内容
-            this.envContent = textarea.value;
-            this.originalEnvContent = this.envContent;
-
-            // 显示成功消息
-            successEl.textContent = '配置保存成功！';
+            const s = this.collectSettings();
+            await WailsAPI.saveSettings(s);
+            this.settings = s;
+            successEl.textContent = '配置已保存';
             successEl.style.display = 'block';
-
-            // 3秒后隐藏成功消息
-            setTimeout(() => {
-                successEl.style.display = 'none';
-            }, 3000);
-        } catch (error) {
-            console.error('保存配置失败:', error);
-            let errorMsg = error.message || '保存配置失败';
-            errorEl.textContent = `保存配置失败: ${errorMsg}`;
+            setTimeout(() => { successEl.style.display = 'none'; }, 3000);
+        } catch (e) {
+            errorEl.textContent = `保存失败: ${e.message}`;
             errorEl.style.display = 'block';
         } finally {
-            // 恢复保存按钮
-            saveBtn.disabled = false;
-            saveBtn.innerHTML = '<span class="btn-icon">💾</span> 保存配置';
+            btn.disabled = false;
+            btn.innerHTML = '<span class="btn-icon">💾</span> 保存配置';
         }
-    }
-
-    resetConfig() {
-        if (this.currentFile !== 'env') {
-            return; // 只能重置 .env 文件
-        }
-
-        const textarea = $('#config-textarea');
-        
-        if (textarea.value === this.originalEnvContent) {
-            return;
-        }
-
-        if (!confirm('确定要重置所有更改吗？')) {
-            return;
-        }
-
-        // 恢复原始内容
-        this.envContent = this.originalEnvContent;
-        textarea.value = this.envContent;
-
-        // 显示提示
-        const successEl = $('#config-success');
-        successEl.textContent = '已重置为原始配置';
-        successEl.style.display = 'block';
-        setTimeout(() => {
-            successEl.style.display = 'none';
-        }, 2000);
     }
 }
 
-// 创建配置页面控制器实例
 let configPageController = null;
 
-// 修改 loadPageData 函数以支持配置页面
 const originalLoadPageData = loadPageData;
 loadPageData = async function(pageName) {
     if (pageName === 'config') {
@@ -1824,4 +1528,112 @@ loadPageData = async function(pageName) {
     } else {
         await originalLoadPageData(pageName);
     }
+};
+
+// ==================== 工作区选择器 ====================
+
+const WorkspaceSelector = {
+    currentPath: '',
+
+    bindEvents() {
+        $('#workspace-browse-btn').style.display = '';
+        $('#workspace-indicator').addEventListener('click', () => this.show());
+        $('#workspace-open-btn').addEventListener('click', () => this.openSelected());
+        $('#workspace-browse-btn').addEventListener('click', () => this.browseFolder());
+        $('#workspace-path-input').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') this.openSelected();
+        });
+    },
+
+    async loadData() {
+        await this.loadCurrent();
+        if (!this.currentPath) {
+            this.show();
+        }
+    },
+
+    async loadCurrent() {
+        try {
+            const data = await WailsAPI.getWorkspace();
+            this.currentPath = data.current || '';
+            this.updateDisplay();
+            this.renderRecentList(data.recent || []);
+        } catch (e) {
+            console.error('Failed to load workspace:', e);
+        }
+    },
+
+    updateDisplay() {
+        const el = $('#workspace-path-display');
+        if (!el) return;
+        if (this.currentPath) {
+            const parts = this.currentPath.replace(/\\/g, '/').split('/');
+            el.textContent = parts[parts.length - 1] || this.currentPath;
+            el.title = this.currentPath;
+        } else {
+            el.textContent = '未选择工作区';
+        }
+    },
+
+    renderRecentList(recent) {
+        const container = $('#recent-workspaces-list');
+        if (!container) return;
+        if (!recent || recent.length === 0) {
+            container.innerHTML = '<div class="empty-state">暂无最近记录</div>';
+            return;
+        }
+        container.innerHTML = recent.map(entry => `
+            <div class="recent-workspace-item" data-path="${entry.path}">
+                <span class="recent-workspace-icon">📁</span>
+                <div class="recent-workspace-info">
+                    <div class="recent-workspace-name">${entry.path.replace(/\\/g, '/').split('/').pop()}</div>
+                    <div class="recent-workspace-path">${entry.path}</div>
+                </div>
+            </div>
+        `).join('');
+        container.querySelectorAll('.recent-workspace-item').forEach(item => {
+            item.addEventListener('click', () => this.selectPath(item.dataset.path));
+        });
+    },
+
+    show() {
+        $('#workspace-path-input').value = this.currentPath || '';
+        $('#workspace-error').style.display = 'none';
+        WailsAPI.getWorkspace().then(data => this.renderRecentList(data.recent || [])).catch(() => {});
+        showModal('workspace-modal');
+    },
+
+    hide() {
+        hideModal('workspace-modal');
+    },
+
+    async browseFolder() {
+        try {
+            const path = await WailsAPI.openFolderDialog();
+            if (path) $('#workspace-path-input').value = path;
+        } catch (e) {
+            console.error('Failed to open folder dialog:', e);
+        }
+    },
+
+    async openSelected() {
+        const path = $('#workspace-path-input').value.trim();
+        if (!path) return;
+        await this.selectPath(path);
+    },
+
+    async selectPath(path) {
+        const errEl = $('#workspace-error');
+        errEl.style.display = 'none';
+        try {
+            await WailsAPI.setWorkspace({ path });
+            this.currentPath = path;
+            this.updateDisplay();
+            this.hide();
+            loadDashboard();
+        } catch (e) {
+            errEl.textContent = e.message || '无法打开该文件夹，请检查路径是否正确';
+            errEl.style.display = 'block';
+        }
+    },
 };
