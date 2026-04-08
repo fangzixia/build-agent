@@ -23,7 +23,7 @@
                 </h1>
                 <nav class="nav">
                     <a href="#dashboard" class="nav-link active" data-page="dashboard">仪表盘</a>
-                    <a href="#requirements" class="nav-link" data-page="requirements">需求管理</a>
+                    <a href="#chat" class="nav-link" data-page="chat">自由对话</a>
                     <a href="#execution" class="nav-link" data-page="execution">执行任务</a>
                     <a href="#history" class="nav-link" data-page="history">验收历史</a>
                     <a href="#config" class="nav-link" data-page="config">系统配置</a>
@@ -91,18 +91,42 @@
                     </div>
                 </div>
 
-                <!-- 需求管理页面 -->
-                <div id="requirements-page" class="page">
+                <!-- 自由对话页面 -->
+                <div id="chat-page" class="page">
                     <div class="page-header">
-                        <h2 class="page-title">需求管理</h2>
-                        <button class="btn btn-primary" id="create-requirement-btn">
-                            <span class="btn-icon">➕</span>
-                            创建需求
-                        </button>
+                        <h2 class="page-title">自由对话</h2>
+                        <button class="btn btn-secondary" id="chat-clear-btn">清空历史</button>
                     </div>
-
-                    <div id="requirements-list" class="requirements-list">
-                        <div class="empty-state">暂无需求数据</div>
+                    <div class="chat-layout">
+                        <!-- 左侧会话列表 -->
+                        <div class="chat-sidebar">
+                            <button class="btn btn-primary chat-new-btn" id="chat-new-btn">
+                                <span class="btn-icon">＋</span> 新建会话
+                            </button>
+                            <div class="chat-session-list" id="chat-session-list"></div>
+                        </div>
+                        <!-- 右侧对话区 -->
+                        <div class="chat-main">
+                            <div class="chat-messages" id="chat-messages">
+                                <div class="chat-empty" id="chat-empty">
+                                    <div class="chat-empty-icon">💬</div>
+                                    <p>输入任何需求，Agent 将直接执行</p>
+                                </div>
+                            </div>
+                            <!-- 执行进度（嵌入 chat） -->
+                            <div class="chat-progress" id="chat-progress" style="display:none;">
+                                <div class="chat-progress-bar">
+                                    <div class="chat-progress-fill" id="chat-progress-fill"></div>
+                                </div>
+                                <div class="chat-progress-logs" id="chat-progress-logs"></div>
+                            </div>
+                            <div class="chat-input-area">
+                                <textarea class="chat-input" id="chat-input" rows="3" placeholder="输入需求或问题，Shift+Enter 换行，Enter 发送..."></textarea>
+                                <button class="btn btn-primary chat-send-btn" id="chat-send-btn">
+                                    <span class="btn-icon">▶</span> 发送
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -250,6 +274,14 @@
                                     <label class="config-field-label">模型名称</label>
                                     <input type="text" id="model-name" class="config-field-input" placeholder="gpt-4o-mini" />
                                 </div>
+                                <div class="config-field">
+                                    <label class="config-field-label">上下文 Token 上限</label>
+                                    <input type="number" min="1000" id="model-max-context-tokens" class="config-field-input" placeholder="130000" />
+                                </div>
+                                <div class="config-field">
+                                    <label class="config-field-label">智能压缩阈值</label>
+                                    <input type="number" min="1000" id="model-smart-compress-threshold" class="config-field-input" placeholder="100000" />
+                                </div>
                             </div>
                         </div>
 
@@ -387,6 +419,7 @@
         </div>
     </div>
 
+    <script src="/static/js/marked.min.js"></script>
     <script src="/static/js/api-adapter.js"></script>
     <script src="/static/js/app.js"></script>
 </body>

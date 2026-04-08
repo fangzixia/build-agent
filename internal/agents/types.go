@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -76,6 +77,20 @@ func (w basicWorkflow) BuildFinalSummary(raw string) string {
 	out := strings.TrimSpace(raw)
 	if out == "" {
 		return "任务执行完成，但模型未返回文本输出。"
+	}
+	// planexecute 的 respond tool 有时返回 JSON 格式 {"response": "..."}，提取纯文本
+	if strings.HasPrefix(out, "{") {
+		var obj map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(out), &obj); err == nil {
+			for _, key := range []string{"response", "content", "output", "text", "result"} {
+				if v, ok := obj[key]; ok {
+					var s string
+					if err := json.Unmarshal(v, &s); err == nil && strings.TrimSpace(s) != "" {
+						return strings.TrimSpace(s)
+					}
+				}
+			}
+		}
 	}
 	return out
 }

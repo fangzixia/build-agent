@@ -26,6 +26,9 @@ type Service struct {
 	cfg    *config.Config
 	agent  agents.Agent
 	runner *adk.Runner
+	// notifyRef 指向 newPlanExecuteService 里的 notifyHolder 变量，
+	// 每次 RunTaskWithProgress 时更新它，使压缩通知路由到当前 onProgress。
+	notifyRef *ProgressFunc
 }
 
 type ProgressFunc func(EventLog)

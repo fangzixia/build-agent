@@ -22,6 +22,8 @@ func Build(name string, cfg *config.Config) (Agent, error) {
 		return buildRequirementsAgent(cfg.Base.WorkspaceRoot, sc), nil
 	case "build":
 		return buildBuildAgent(cfg.Base.WorkspaceRoot, sc), nil
+	case "chat":
+		return buildChatAgent(cfg.Base.WorkspaceRoot, cfg.Base.CmdTimeoutSec), nil
 	default:
 		return nil, fmt.Errorf("unknown agent: %s", name)
 	}

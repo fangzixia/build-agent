@@ -15,9 +15,11 @@ type BaseConfig struct {
 }
 
 type ModelConfig struct {
-	BaseURL string
-	APIKey  string
-	Model   string
+	BaseURL                string
+	APIKey                 string
+	Model                  string
+	MaxContextTokens       int
+	SmartCompressThreshold int
 }
 
 type AgentConfig struct {
@@ -69,14 +71,16 @@ func Load() (*Config, error) {
 			BuildMaxRetries: 5,
 		},
 		Model: ModelConfig{
-			BaseURL: s.Model.BaseURL,
-			APIKey:  s.Model.APIKey,
-			Model:   s.Model.Model,
+			BaseURL:                s.Model.BaseURL,
+			APIKey:                 s.Model.APIKey,
+			Model:                  s.Model.Model,
+			MaxContextTokens:       s.Model.MaxContextTokens,
+			SmartCompressThreshold: s.Model.SmartCompressThreshold,
 		},
 		Agent: make(map[string]AgentConfig, 5),
 	}
 
-	for _, name := range []string{"CODE", "ANALYSIS", "EVAL", "REQUIREMENTS", "BUILD"} {
+	for _, name := range []string{"CODE", "ANALYSIS", "EVAL", "REQUIREMENTS", "BUILD", "CHAT"} {
 		lower := strings.ToLower(name)
 		as := s.Agents[lower]
 		ac, err := buildAgentConfig(lower, absRoot, as)

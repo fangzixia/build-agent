@@ -14,9 +14,11 @@ type Settings struct {
 
 // ModelSettings 模型配置（OpenAI 标准）
 type ModelSettings struct {
-	BaseURL string `json:"baseUrl"`
-	APIKey  string `json:"apiKey"`
-	Model   string `json:"model"`
+	BaseURL                string `json:"baseUrl"`
+	APIKey                 string `json:"apiKey"`
+	Model                  string `json:"model"`
+	MaxContextTokens       int    `json:"maxContextTokens"`
+	SmartCompressThreshold int    `json:"smartCompressThreshold"`
 }
 
 // AgentSettings 单个智能体配置
@@ -27,9 +29,11 @@ type AgentSettings struct {
 
 var defaultSettings = Settings{
 	Model: ModelSettings{
-		BaseURL: "https://api.openai.com/v1",
-		APIKey:  "",
-		Model:   "gpt-4o-mini",
+		BaseURL:                "https://api.openai.com/v1",
+		APIKey:                 "",
+		Model:                  "gpt-4o-mini",
+		MaxContextTokens:       130000,
+		SmartCompressThreshold: 100000,
 	},
 	Agents: map[string]AgentSettings{
 		"analysis":     {ExecutorMaxIterations: 100, PlanExecuteMaxIterations: 5},
@@ -37,6 +41,7 @@ var defaultSettings = Settings{
 		"code":         {ExecutorMaxIterations: 1000, PlanExecuteMaxIterations: 10},
 		"eval":         {ExecutorMaxIterations: 1000, PlanExecuteMaxIterations: 10},
 		"build":        {ExecutorMaxIterations: 1000, PlanExecuteMaxIterations: 10},
+		"chat":         {ExecutorMaxIterations: 200, PlanExecuteMaxIterations: 10},
 	},
 }
 

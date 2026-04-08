@@ -48,6 +48,12 @@ func (s *Service) RunTaskWithProgress(ctx context.Context, task string, onProgre
 		}
 	}
 
+	// 将压缩通知路由到当前 onProgress
+	if s.notifyRef != nil {
+		*s.notifyRef = wrappedProgress
+		defer func() { *s.notifyRef = nil }()
+	}
+
 	output, events, hasError := s.runOnce(ctx, s.agent.Workflow().BuildTaskEnvelope(normalized), wrappedProgress)
 	evaluatedAt := ""
 	if pp := s.agent.PostProcessor(); pp != nil {
@@ -215,10 +221,30 @@ func extractEventText(ev *adk.AgentEvent) string {
 	if ev.Output.MessageOutput != nil {
 		msg, err := ev.Output.MessageOutput.GetMessage()
 		if err == nil && msg != nil {
-			return strings.TrimSpace(msg.Content)
+			return unwrapJSONText(strings.TrimSpace(msg.Content))
 		}
 	}
 	return ""
+}
+
+// unwrapJSONText 尝试从 {"response":"..."} 等 JSON 包装中提取纯文本
+func unwrapJSONText(s string) string {
+	if !strings.HasPrefix(s, "{") {
+		return s
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &obj); err != nil {
+		return s
+	}
+	for _, key := range []string{"response", "content", "output", "text", "result"} {
+		if v, ok := obj[key]; ok {
+			var text string
+			if err := json.Unmarshal(v, &text); err == nil && strings.TrimSpace(text) != "" {
+				return strings.TrimSpace(text)
+			}
+		}
+	}
+	return s
 }
 
 func isToolEvent(ev *adk.AgentEvent) bool {

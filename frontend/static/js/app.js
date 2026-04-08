@@ -254,8 +254,8 @@ async function loadPageData(pageName) {
         case 'dashboard':
             await loadDashboard();
             break;
-        case 'requirements':
-            await loadRequirements();
+        case 'chat':
+            ChatPage.onShow();
             break;
         case 'execution':
             if (state.currentAction) {
@@ -439,6 +439,7 @@ async function showExecutionForm(action) {
         code: '编码实现',
         eval: '验收评测',
         build: '完整构建',
+        chat: '自由对话',
     };
 
     const placeholders = {
@@ -447,6 +448,7 @@ async function showExecutionForm(action) {
         code: '（可选）指定实现重点...',
         eval: '（可选）指定验收重点...',
         build: '（可选）指定构建参数...',
+        chat: '请输入你的需求或问题，Agent 将直接执行...',
     };
 
     $('#execution-form-title').textContent = titles[action] || '执行任务';
@@ -454,7 +456,7 @@ async function showExecutionForm(action) {
     $('#task-input').placeholder = placeholders[action] || '请输入任务描述...';
     
     // analysis 和其他非 requirements 的任务描述可选
-    const taskOptional = action !== 'requirements';
+    const taskOptional = action !== 'requirements' && action !== 'chat';
     const label = $('#task-input').previousElementSibling;
     if (label && label.tagName === 'LABEL') {
         label.textContent = taskOptional ? '任务描述（可选）' : '任务描述';
@@ -500,6 +502,7 @@ async function setupFormFields(action) {
         // 完整构建：需求文件下拉框
         await addBuildFields(formBody, actionsDiv);
     }
+    // chat: 无额外字段，只有任务描述输入框
 }
 
 // 分析项目的字段
@@ -1075,34 +1078,6 @@ function renderHistoryList() {
 
 // 模态框
 function initModals() {
-    // 创建需求模态框
-    $('#create-requirement-btn').addEventListener('click', () => {
-        showModal('create-requirement-modal');
-    });
-    
-    $('#close-create-requirement-modal').addEventListener('click', () => {
-        hideModal('create-requirement-modal');
-    });
-    
-    $('#cancel-create-requirement').addEventListener('click', () => {
-        hideModal('create-requirement-modal');
-    });
-    
-    $('#submit-create-requirement').addEventListener('click', async () => {
-        const description = $('#requirement-description').value.trim();
-        if (!description) {
-            alert('请输入需求描述');
-            return;
-        }
-        
-        hideModal('create-requirement-modal');
-        
-        // 切换到执行页面并自动填充
-        showPage('execution');
-        showExecutionForm('requirements');
-        $('#task-input').value = description;
-    });
-    
     // 需求详情模态框
     $('#close-requirement-detail-modal').addEventListener('click', () => {
         hideModal('requirement-detail-modal');
@@ -1180,21 +1155,17 @@ function getCategoryText(category) {
 }
 
 function formatMarkdown(text) {
-    // 简单的 Markdown 渲染
-    return text
-        .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-        .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-        .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        .replace(/\*(.+?)\*/g, '<em>$1</em>')
-        .replace(/`(.+?)`/g, '<code>$1</code>')
-        .replace(/^- (.+)$/gm, '<li>$1</li>')
-        .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
-        .replace(/\n\n/g, '</p><p>')
-        .replace(/^(.+)$/gm, '<p>$1</p>');
+    if (!text) return '';
+    if (typeof marked !== 'undefined') {
+        try {
+            return marked.parse(text, { breaks: true, gfm: true });
+        } catch (e) {
+            // fallback
+        }
+    }
+    // fallback: plain text with line breaks
+    return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
 }
-
-// 文件编辑器
 function initFileEditor() {
     const editorState = {
         currentPath: '',
@@ -1389,6 +1360,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initNavigation();
     initExecution();
     initModals();
+    ChatPage.init();
 
     // 事件绑定立即执行，不等 Bridge
     WorkspaceSelector.bindEvents();
@@ -1415,6 +1387,7 @@ class ConfigPageController {
             code:         '编码执行',
             eval:         '验收评测',
             build:        '完整构建',
+            chat:         '自由对话',
         };
         $('#save-config-btn')?.addEventListener('click', () => this.saveConfig());
     }
@@ -1445,6 +1418,8 @@ class ConfigPageController {
         $('#model-base-url').value = s.model?.baseUrl || '';
         $('#model-api-key').value  = s.model?.apiKey  || '';
         $('#model-name').value     = s.model?.model   || '';
+        $('#model-max-context-tokens').value = s.model?.maxContextTokens ?? 130000;
+        $('#model-smart-compress-threshold').value = s.model?.smartCompressThreshold ?? 100000;
 
         const grid = $('#agents-config-grid');
         const agents = s.agents || {};
@@ -1477,6 +1452,8 @@ class ConfigPageController {
                 baseUrl: $('#model-base-url').value.trim(),
                 apiKey:  $('#model-api-key').value.trim(),
                 model:   $('#model-name').value.trim(),
+                maxContextTokens: parseInt($('#model-max-context-tokens').value, 10) || 130000,
+                smartCompressThreshold: parseInt($('#model-smart-compress-threshold').value, 10) || 100000,
             },
             agents: {},
         };
@@ -1529,6 +1506,282 @@ loadPageData = async function(pageName) {
         await originalLoadPageData(pageName);
     }
 };
+
+
+// ==================== 自由对话页面 ====================
+
+const ChatPage = (() => {
+    const STORAGE_KEY = 'chat_sessions';
+
+    let sessions = [];
+    let activeId = null;
+    let isRunning = false;
+
+    function load() {
+        try { sessions = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { sessions = []; }
+    }
+
+    function save() {
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions)); } catch {}
+    }
+
+    function activeSession() {
+        return sessions.find(s => s.id === activeId) || null;
+    }
+
+    function newSession() {
+        const id = Date.now().toString();
+        sessions.unshift({ id, title: '新会话', messages: [] });
+        activeId = id;
+        save();
+        renderSidebar();
+        renderMessages();
+    }
+
+    function selectSession(id) {
+        activeId = id;
+        renderSidebar();
+        renderMessages();
+    }
+
+    function deleteSession(id) {
+        sessions = sessions.filter(s => s.id !== id);
+        if (activeId === id) activeId = sessions.length > 0 ? sessions[0].id : null;
+        save();
+        renderSidebar();
+        renderMessages();
+    }
+
+    function renderSidebar() {
+        const list = document.querySelector('#chat-session-list');
+        if (!list) return;
+        if (sessions.length === 0) {
+            list.innerHTML = '<div class="chat-session-empty">暂无会话</div>';
+            return;
+        }
+        list.innerHTML = sessions.map(s => `
+            <div class="chat-session-item ${s.id === activeId ? 'active' : ''}" data-id="${s.id}">
+                <span class="chat-session-title">${escapeHtml(s.title)}</span>
+                <button class="chat-session-del" data-id="${s.id}" title="删除">✕</button>
+            </div>
+        `).join('');
+        list.querySelectorAll('.chat-session-item').forEach(el => {
+            el.addEventListener('click', (e) => {
+                if (e.target.classList.contains('chat-session-del')) return;
+                selectSession(el.dataset.id);
+            });
+        });
+        list.querySelectorAll('.chat-session-del').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (confirm('删除该会话？')) deleteSession(btn.dataset.id);
+            });
+        });
+    }
+
+    function renderMessages() {
+        const container = document.querySelector('#chat-messages');
+        const empty = document.querySelector('#chat-empty');
+        if (!container) return;
+
+        // 清除旧消息（保留 chat-empty 节点）
+        Array.from(container.children).forEach(c => {
+            if (c.id !== 'chat-empty') c.remove();
+        });
+
+        const session = activeSession();
+        const msgs = session ? session.messages : [];
+
+        if (msgs.length === 0) {
+            if (empty) empty.style.display = 'flex';
+            return;
+        }
+        if (empty) empty.style.display = 'none';
+
+        msgs.forEach(msg => container.appendChild(buildMessageEl(msg)));
+        container.scrollTop = container.scrollHeight;
+    }
+
+    function buildMessageEl(msg) {
+        const div = document.createElement('div');
+        div.className = `chat-msg chat-msg-${msg.role}`;
+        const bubble = document.createElement('div');
+        bubble.className = 'chat-bubble';
+
+        if (msg.role === 'user') {
+            bubble.textContent = msg.content;
+        } else {
+            const mdDiv = document.createElement('div');
+            mdDiv.className = 'chat-output markdown-content';
+            mdDiv.innerHTML = formatMarkdown(msg.content || '（无输出）');
+            bubble.appendChild(mdDiv);
+            if (msg.logs && msg.logs.length > 0) {
+                const details = document.createElement('details');
+                details.className = 'chat-logs-details';
+                const summary = document.createElement('summary');
+                summary.textContent = `查看执行日志（${msg.logs.length} 条）`;
+                details.appendChild(summary);
+                const logsDiv = document.createElement('div');
+                logsDiv.className = 'chat-logs-inner';
+                msg.logs.forEach(({ time, message, type }) => {
+                    const row = document.createElement('div');
+                    row.className = `log-entry ${type}`;
+                    row.innerHTML = `<span class="log-time">${time}</span><span class="log-message">${escapeHtml(message)}</span>`;
+                    logsDiv.appendChild(row);
+                });
+                details.appendChild(logsDiv);
+                bubble.appendChild(details);
+            }
+        }
+
+        const meta = document.createElement('div');
+        meta.className = 'chat-meta';
+        meta.textContent = msg.time || '';
+        div.appendChild(bubble);
+        div.appendChild(meta);
+        return div;
+    }
+
+    function nowTime() {
+        const n = new Date();
+        return `${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}:${String(n.getSeconds()).padStart(2,'0')}`;
+    }
+
+    function escapeHtml(s) {
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    async function send() {
+        if (isRunning) return;
+        const input = document.querySelector('#chat-input');
+        const text = input ? input.value.trim() : '';
+        if (!text) return;
+
+        if (!activeId) newSession();
+        const session = activeSession();
+        if (session.messages.length === 0) {
+            session.title = text.slice(0, 20) + (text.length > 20 ? '…' : '');
+        }
+
+        session.messages.push({ role: 'user', content: text, time: nowTime() });
+        save();
+        if (input) input.value = '';
+        renderSidebar();
+        renderMessages();
+
+        isRunning = true;
+        setSendDisabled(true);
+
+        const progressEl = document.querySelector('#chat-progress');
+        const logsEl = document.querySelector('#chat-progress-logs');
+        const fillEl = document.querySelector('#chat-progress-fill');
+        if (progressEl) progressEl.style.display = 'block';
+        if (logsEl) logsEl.innerHTML = '';
+        if (fillEl) fillEl.style.width = '0%';
+
+        const collectedLogs = [];
+
+        function appendProgressLog(time, message, type) {
+            collectedLogs.push({ time, message, type });
+            if (!logsEl) return;
+            const row = document.createElement('div');
+            row.className = `log-entry ${type}`;
+            row.innerHTML = `<span class="log-time">${time}</span><span class="log-message">${escapeHtml(message)}</span>`;
+            logsEl.appendChild(row);
+            logsEl.scrollTop = logsEl.scrollHeight;
+            if (fillEl) fillEl.style.width = `${Math.min(collectedLogs.length * 4, 90)}%`;
+        }
+
+        try {
+            await window.WailsAPI.runTaskStreaming(
+                'chat', text, '',
+                (log) => {
+                    const t = nowTime();
+                    if (log.error) {
+                        appendProgressLog(t, `❌ ${log.error}`, 'error');
+                    } else if (log.output) {
+                        let msg = log.tool_name
+                            ? `🔧 ${log.tool_name}: ${log.output.slice(0, 200)}`
+                            : log.role === 'assistant'
+                                ? `🤖 ${log.output.slice(0, 200)}`
+                                : log.output.slice(0, 200);
+                        if (log.output.length > 200) msg += '...';
+                        appendProgressLog(t, msg, 'info');
+                    }
+                },
+                (result) => {
+                    if (fillEl) fillEl.style.width = '100%';
+                    setTimeout(() => { if (progressEl) progressEl.style.display = 'none'; }, 600);
+                    session.messages.push({
+                        role: 'assistant',
+                        content: result.output || '（任务完成，无文本输出）',
+                        time: nowTime(),
+                        logs: collectedLogs,
+                    });
+                    save();
+                    renderSidebar();
+                    renderMessages();
+                    isRunning = false;
+                    setSendDisabled(false);
+                },
+                (err) => {
+                    if (progressEl) progressEl.style.display = 'none';
+                    session.messages.push({
+                        role: 'assistant',
+                        content: `执行失败: ${err.error || '未知错误'}`,
+                        time: nowTime(),
+                        logs: collectedLogs,
+                    });
+                    save();
+                    renderSidebar();
+                    renderMessages();
+                    isRunning = false;
+                    setSendDisabled(false);
+                }
+            );
+        } catch (e) {
+            if (progressEl) progressEl.style.display = 'none';
+            session.messages.push({ role: 'assistant', content: `执行失败: ${e.message}`, time: nowTime(), logs: collectedLogs });
+            save();
+            renderSidebar();
+            renderMessages();
+            isRunning = false;
+            setSendDisabled(false);
+        }
+    }
+
+    function setSendDisabled(disabled) {
+        const btn = document.querySelector('#chat-send-btn');
+        const input = document.querySelector('#chat-input');
+        if (btn) { btn.disabled = disabled; btn.innerHTML = disabled ? '⏳ 执行中...' : '<span class="btn-icon">▶</span> 发送'; }
+        if (input) input.disabled = disabled;
+    }
+
+    function init() {
+        load();
+        if (sessions.length === 0) newSession();
+        else activeId = sessions[0].id;
+
+        document.querySelector('#chat-new-btn')?.addEventListener('click', () => newSession());
+        document.querySelector('#chat-clear-btn')?.addEventListener('click', () => {
+            if (confirm('清空所有会话历史？')) {
+                sessions = [];
+                activeId = null;
+                save();
+                newSession();
+            }
+        });
+        document.querySelector('#chat-send-btn')?.addEventListener('click', () => send());
+        document.querySelector('#chat-input')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                send();
+            }
+        });
+    }
+
+    return { init, onShow() { renderSidebar(); renderMessages(); } };
+})();
 
 // ==================== 工作区选择器 ====================
 

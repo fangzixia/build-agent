@@ -45,15 +45,28 @@ func newPlanExecuteService(ctx context.Context, cfg *config.Config, agentName st
 		return nil, err
 	}
 	pb := scn.PromptBuilder()
-	agentInst, err := buildPlanExecuteAgent(ctx, model, pb, tools, scCfg)
+
+	// notifyHolder 是一个间接层：buildPlanExecuteAgent 在构建时不知道 onProgress，
+	// 通过持有指针，在运行时动态路由压缩通知到当前的 onProgress 回调。
+	var notifyHolder ProgressFunc
+	notify := func(msg string) {
+		if notifyHolder != nil {
+			notifyHolder(EventLog{AgentName: "system", Output: msg})
+		}
+	}
+
+	agentInst, err := buildPlanExecuteAgent(ctx, model, pb, tools, scCfg, cfg.Model.MaxContextTokens, cfg.Model.SmartCompressThreshold, notify)
 	if err != nil {
 		return nil, err
 	}
-	return &Service{
+	svc := &Service{
 		cfg:    cfg,
 		agent:  scn,
 		runner: adk.NewRunner(ctx, adk.RunnerConfig{Agent: agentInst, EnableStreaming: true}),
-	}, nil
+	}
+	// 将 notifyHolder 指向 svc.onProgress，这样压缩通知会自动路由到当前执行的 onProgress
+	svc.notifyRef = &notifyHolder
+	return svc, nil
 }
 
 // newBuildAgentService builds a planexecute Service for the "build" agent,
@@ -116,6 +129,7 @@ func newBuildAgentService(ctx context.Context, cfg *config.Config) (*Service, er
 	}
 
 	pb := buildAgentDef.PromptBuilder()
+	compressor := newContextCompressor(cfg.Model.MaxContextTokens, cfg.Model.SmartCompressThreshold, model, nil) // build agent 的压缩通知通过 notifyRef 路由
 	planner, err := planexecute.NewPlanner(ctx, &planexecute.PlannerConfig{
 		ToolCallingChatModel: model,
 		GenInputFn: func(_ context.Context, userInput []adk.Message) ([]adk.Message, error) {
@@ -134,12 +148,13 @@ func newBuildAgentService(ctx context.Context, cfg *config.Config) (*Service, er
 			},
 			EmitInternalEvents: true,
 		},
-		GenInputFn: func(_ context.Context, in *planexecute.ExecutionContext) ([]adk.Message, error) {
+		GenInputFn: func(genCtx context.Context, in *planexecute.ExecutionContext) ([]adk.Message, error) {
 			taskText, planJSON, executedJSON := extractExecutionContext(in)
-			userPrompt := fmt.Sprintf("用户任务:\n%s\n\n当前计划(JSON):\n%s\n\n已执行步骤(JSON):\n%s", taskText, planJSON, executedJSON)
-			// Only pass system + user messages; sub-agent internal messages (tool-call-only
-			// assistant messages with empty content) must not be forwarded to the LLM.
-			return []adk.Message{schema.SystemMessage(pb.Executor()), schema.UserMessage(userPrompt)}, nil
+			systemPrompt := pb.Executor()
+			taskPrompt := fmt.Sprintf("用户任务:\n%s\n\n当前计划(JSON):\n%s", taskText, planJSON)
+			executedJSON, _ = compressor.CompressExecutedSteps(genCtx, systemPrompt, taskPrompt, executedJSON)
+			userPrompt := fmt.Sprintf("%s\n\n已执行步骤(JSON):\n%s", taskPrompt, executedJSON)
+			return []adk.Message{schema.SystemMessage(systemPrompt), schema.UserMessage(userPrompt)}, nil
 		},
 		MaxIterations: scCfg.ExecutorMaxIterations,
 	})
@@ -148,10 +163,13 @@ func newBuildAgentService(ctx context.Context, cfg *config.Config) (*Service, er
 	}
 	replanner, err := planexecute.NewReplanner(ctx, &planexecute.ReplannerConfig{
 		ChatModel: model,
-		GenInputFn: func(_ context.Context, in *planexecute.ExecutionContext) ([]adk.Message, error) {
+		GenInputFn: func(genCtx context.Context, in *planexecute.ExecutionContext) ([]adk.Message, error) {
 			_, planJSON, executedJSON := extractExecutionContext(in)
-			userPrompt := fmt.Sprintf("当前计划(JSON):\n%s\n\n已执行步骤(JSON):\n%s\n\n基于以上执行情况判断是否重规划。", planJSON, executedJSON)
-			return []adk.Message{schema.SystemMessage(pb.Replanner()), schema.UserMessage(userPrompt)}, nil
+			systemPrompt := pb.Replanner()
+			taskPrompt := fmt.Sprintf("当前计划(JSON):\n%s", planJSON)
+			executedJSON, _ = compressor.CompressExecutedSteps(genCtx, systemPrompt, taskPrompt, executedJSON)
+			userPrompt := fmt.Sprintf("%s\n\n已执行步骤(JSON):\n%s\n\n基于以上执行情况判断是否重规划。", taskPrompt, executedJSON)
+			return []adk.Message{schema.SystemMessage(systemPrompt), schema.UserMessage(userPrompt)}, nil
 		},
 	})
 	if err != nil {
@@ -166,11 +184,20 @@ func newBuildAgentService(ctx context.Context, cfg *config.Config) (*Service, er
 	if err != nil {
 		return nil, err
 	}
-	return &Service{
+
+	var notifyHolder ProgressFunc
+	compressor.notify = func(msg string) {
+		if notifyHolder != nil {
+			notifyHolder(EventLog{AgentName: "system", Output: msg})
+		}
+	}
+	svc := &Service{
 		cfg:    cfg,
 		agent:  buildAgentDef,
 		runner: adk.NewRunner(ctx, adk.RunnerConfig{Agent: agentInst, EnableStreaming: true}),
-	}, nil
+	}
+	svc.notifyRef = &notifyHolder
+	return svc, nil
 }
 
 // buildSubAgent constructs a planexecute adk.Agent for use as a sub-agent tool.
@@ -192,7 +219,7 @@ func buildSubAgent(ctx context.Context, cfg *config.Config, agentName string) (a
 	if err != nil {
 		return nil, err
 	}
-	inner, err := buildPlanExecuteAgent(ctx, model, agentDef.PromptBuilder(), tools, scCfg)
+	inner, err := buildPlanExecuteAgent(ctx, model, agentDef.PromptBuilder(), tools, scCfg, cfg.Model.MaxContextTokens, cfg.Model.SmartCompressThreshold, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -218,7 +245,12 @@ func buildPlanExecuteAgent(
 	pb agents.PromptBuilder,
 	tools []tool.BaseTool,
 	scCfg config.AgentConfig,
+	maxContextTokens int,
+	smartThreshold int,
+	notify CompressNotify,
 ) (adk.Agent, error) {
+	compressor := newContextCompressor(maxContextTokens, smartThreshold, chatModel, notify)
+
 	planner, err := planexecute.NewPlanner(ctx, &planexecute.PlannerConfig{
 		ToolCallingChatModel: chatModel,
 		GenInputFn: func(_ context.Context, userInput []adk.Message) ([]adk.Message, error) {
@@ -233,10 +265,13 @@ func buildPlanExecuteAgent(
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{Tools: tools, ExecuteSequentially: true},
 		},
-		GenInputFn: func(_ context.Context, in *planexecute.ExecutionContext) ([]adk.Message, error) {
+		GenInputFn: func(genCtx context.Context, in *planexecute.ExecutionContext) ([]adk.Message, error) {
 			taskText, planJSON, executedJSON := extractExecutionContext(in)
-			userPrompt := fmt.Sprintf("用户任务:\n%s\n\n当前计划(JSON):\n%s\n\n已执行步骤(JSON):\n%s", taskText, planJSON, executedJSON)
-			return []adk.Message{schema.SystemMessage(pb.Executor()), schema.UserMessage(userPrompt)}, nil
+			systemPrompt := pb.Executor()
+			taskPrompt := fmt.Sprintf("用户任务:\n%s\n\n当前计划(JSON):\n%s", taskText, planJSON)
+			executedJSON, _ = compressor.CompressExecutedSteps(genCtx, systemPrompt, taskPrompt, executedJSON)
+			userPrompt := fmt.Sprintf("%s\n\n已执行步骤(JSON):\n%s", taskPrompt, executedJSON)
+			return []adk.Message{schema.SystemMessage(systemPrompt), schema.UserMessage(userPrompt)}, nil
 		},
 		MaxIterations: scCfg.ExecutorMaxIterations,
 	})
@@ -245,10 +280,13 @@ func buildPlanExecuteAgent(
 	}
 	replanner, err := planexecute.NewReplanner(ctx, &planexecute.ReplannerConfig{
 		ChatModel: chatModel,
-		GenInputFn: func(_ context.Context, in *planexecute.ExecutionContext) ([]adk.Message, error) {
+		GenInputFn: func(genCtx context.Context, in *planexecute.ExecutionContext) ([]adk.Message, error) {
 			_, planJSON, executedJSON := extractExecutionContext(in)
-			userPrompt := fmt.Sprintf("当前计划(JSON):\n%s\n\n已执行步骤(JSON):\n%s\n\n基于以上执行情况判断是否重规划。", planJSON, executedJSON)
-			return []adk.Message{schema.SystemMessage(pb.Replanner()), schema.UserMessage(userPrompt)}, nil
+			systemPrompt := pb.Replanner()
+			taskPrompt := fmt.Sprintf("当前计划(JSON):\n%s", planJSON)
+			executedJSON, _ = compressor.CompressExecutedSteps(genCtx, systemPrompt, taskPrompt, executedJSON)
+			userPrompt := fmt.Sprintf("%s\n\n已执行步骤(JSON):\n%s\n\n基于以上执行情况判断是否重规划。", taskPrompt, executedJSON)
+			return []adk.Message{schema.SystemMessage(systemPrompt), schema.UserMessage(userPrompt)}, nil
 		},
 	})
 	if err != nil {
