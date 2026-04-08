@@ -1156,9 +1156,12 @@ function getCategoryText(category) {
 
 function formatMarkdown(text) {
     if (!text) return '';
+    // 压缩连续空行（超过2个换行符的压缩为2个），避免渲染出大量空白
+    text = text.replace(/\n{3,}/g, '\n\n').replace(/[ \t]+\n/g, '\n');
     if (typeof marked !== 'undefined') {
         try {
-            return marked.parse(text, { breaks: true, gfm: true });
+            // breaks: false 避免单个换行变成 <br>，由 Markdown 段落语义控制换行
+            return marked.parse(text, { breaks: false, gfm: true });
         } catch (e) {
             // fallback
         }

@@ -29,6 +29,8 @@ type Policy struct {
 	AllowedRunCommandPrefixes []string
 	EnablePythonRewrite       bool
 	EnablePortTools           bool // 启用 check_port / kill_port 工具
+	EnableWebTools            bool // 启用 web_search / fetch_url 工具
+	EnableOfficeTools         bool // 启用 read_word / write_word / read_excel / write_excel / read_pdf / write_pdf
 }
 
 // dirOf returns the directory part of a file path.
@@ -68,6 +70,28 @@ func BuildTools(workspaceRoot string, timeoutSec int, policy Policy) ([]tool.Bas
 			return nil, err
 		}
 		all = append(all, portTools...)
+	}
+	if policy.EnableWebTools {
+		wst := &webSearchToolSet{}
+		wsTools, err := wst.Tools()
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, wsTools...)
+
+		fut := &fetchURLToolSet{}
+		fuTools, err := fut.Tools()
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, fuTools...)
+	}
+	if policy.EnableOfficeTools {
+		officeTools, err := buildOfficeTools(workspaceRoot)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, officeTools...)
 	}
 	return all, nil
 }

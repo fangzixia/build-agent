@@ -12,10 +12,10 @@ import (
 )
 
 const (
-	defaultMaxContextTokens       = 130000
-	defaultSmartCompressThreshold = 100000
-	// 保守估算：1 token ≈ 3 个 UTF-8 字符（中英混合场景）
-	charsPerToken = 3
+	defaultMaxContextTokens       = 120000
+	defaultSmartCompressThreshold = 90000
+	// 保守估算：1 token ≈ 2 个 UTF-8 字符（中英混合场景，中文约 1.5~2 字符/token）
+	charsPerToken = 2
 	// 压缩后保留的安全余量（token 数）
 	safetyMargin = 5000
 )
