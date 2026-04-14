@@ -20,10 +20,29 @@ import (
 )
 
 func NewService(ctx context.Context, cfg *config.Config, agentName string) (*Service, error) {
-	if agentName == "build" {
+	switch agentName {
+	case "build":
 		return newBuildAgentService(ctx, cfg)
+	case "analysis":
+		return newParallelAnalysisService(ctx, cfg)
+	default:
+		return newPlanExecuteService(ctx, cfg, agentName)
 	}
-	return newPlanExecuteService(ctx, cfg, agentName)
+}
+
+// newParallelAnalysisService 返回一个 Service，其 RunTaskWithProgress 会委托给
+// 三阶段并行分析流水线，而不是单个 planexecute agent。
+func newParallelAnalysisService(ctx context.Context, cfg *config.Config) (*Service, error) {
+	agentDef, err := agents.Build("analysis", cfg)
+	if err != nil {
+		return nil, err
+	}
+	// runner 为 nil，RunTaskWithProgress 会检测到这一点并走并行分析路径。
+	svc := &Service{
+		cfg:   cfg,
+		agent: agentDef,
+	}
+	return svc, nil
 }
 
 func newPlanExecuteService(ctx context.Context, cfg *config.Config, agentName string) (*Service, error) {
@@ -69,8 +88,8 @@ func newPlanExecuteService(ctx context.Context, cfg *config.Config, agentName st
 	return svc, nil
 }
 
-// newBuildAgentService builds a planexecute Service for the "build" agent,
-// where code/eval/analysis sub-agents are exposed as tools to the build executor.
+// newBuildAgentService 为 "build" agent 构建 planexecute Service，
+// 其中 code/eval/analysis 子 agent 以工具形式暴露给 build executor。
 func newBuildAgentService(ctx context.Context, cfg *config.Config) (*Service, error) {
 	codeAgent, err := buildSubAgent(ctx, cfg, "code")
 	if err != nil {
@@ -92,7 +111,7 @@ func newBuildAgentService(ctx context.Context, cfg *config.Config) (*Service, er
 		return &schema.ParameterInfo{Type: schema.String, Desc: desc, Required: false}
 	}
 
-	// Wrap each sub-agent as a tool with an explicit input schema.
+	// 将每个子 agent 包装为带显式输入 schema 的工具。
 	codeTool := adk.NewAgentTool(ctx, codeAgent,
 		adk.WithAgentInputSchema(schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"task":              strParam("用户原始任务描述"),
@@ -200,7 +219,7 @@ func newBuildAgentService(ctx context.Context, cfg *config.Config) (*Service, er
 	return svc, nil
 }
 
-// buildSubAgent constructs a planexecute adk.Agent for use as a sub-agent tool.
+// buildSubAgent 构建一个 planexecute adk.Agent，用于作为子 agent 工具。
 func buildSubAgent(ctx context.Context, cfg *config.Config, agentName string) (adk.Agent, error) {
 	agentDef, err := agents.Build(agentName, cfg)
 	if err != nil {
@@ -223,12 +242,12 @@ func buildSubAgent(ctx context.Context, cfg *config.Config, agentName string) (a
 	if err != nil {
 		return nil, err
 	}
-	// Wrap with a unique name so adk.NewAgentTool produces distinct tool names.
+	// 包装唯一名称，使 adk.NewAgentTool 为每个子 agent 生成不同的工具名。
 	return &namedAgent{Agent: inner, name: agentName, desc: agentName + " sub-agent"}, nil
 }
 
-// namedAgent wraps an adk.Agent and overrides Name/Description so that
-// adk.NewAgentTool produces a unique tool name for each sub-agent.
+// namedAgent 包装 adk.Agent 并覆盖 Name/Description，
+// 确保 adk.NewAgentTool 为每个子 agent 生成唯一的工具名。
 type namedAgent struct {
 	adk.Agent
 	name string

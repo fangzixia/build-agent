@@ -508,7 +508,7 @@ async function setupFormFields(action) {
 // 分析项目的字段
 async function addAnalysisFields(formBody, actionsDiv) {
     try {
-        const designPath = '.spec/design.md';
+        const designPath = '.spec/DESIGN.md';
 
         // 检查文件是否存在
         let fileExists = false;

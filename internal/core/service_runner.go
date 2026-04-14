@@ -31,6 +31,19 @@ func (s *Service) RunTaskWithProgress(ctx context.Context, task string, onProgre
 		applog.AI("task.error", map[string]any{"agent": agentName, "error": err.Error()})
 		return nil, err
 	}
+
+	// Parallel analysis uses its own three-phase pipeline instead of a runner.
+	if agentName == "analysis" && s.runner == nil {
+		defer s.cleanupTemporaryArtifacts(onProgress)
+		result, err := RunParallelAnalysis(ctx, s.cfg, normalized, onProgress)
+		if err != nil {
+			applog.AI("task.error", map[string]any{"agent": agentName, "error": err.Error()})
+			return nil, err
+		}
+		applog.AI("task.done", map[string]any{"agent": agentName, "has_error": result.HasError, "output": result.Output})
+		return result, nil
+	}
+
 	defer s.cleanupTemporaryArtifacts(onProgress)
 
 	// 包装 onProgress 以记录每个事件

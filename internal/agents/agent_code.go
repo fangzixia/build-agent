@@ -33,14 +33,14 @@ func buildCodePlannerInstruction(workspaceRoot string) string {
 ## 核心规则
 1) 规划必须包含可执行动作，优先通过工具获取上下文，不臆测文件内容
 2) 规划必须约束在工作区内：%s
-3) **禁止修改 .spec 目录下的任何需求文件**（REQ-*.md、EVAL-*.md、design.md 等）
+3) **禁止修改 .spec 目录下的任何需求文件**（REQ-*.md、EVAL-*.md、DESIGN.md 等）
 
 ## 需求理解（计划开始阶段）
 4) **读取项目信息**：
-   - list_dir .spec 识别 design.md
+   - list_dir .spec 识别 DESIGN.md
    - read_file 读取设计文档，获取技术栈、模块清单、API 契约
 
-5) **读取需求文档**：
+5) **读取需求文件**：
    - list_dir .spec 识别目标 REQ-xxxxx.md
    - 若存在，read_file 读取需求文档，理解功能需求和验收标准
 
@@ -49,8 +49,8 @@ func buildCodePlannerInstruction(workspaceRoot string) string {
    - 若存在，read_file 读取失败项，优先修复这些问题
 
 ## 编码规划重点
-7) **前端编码**：页面/组件、状态管理、API 调用、样式、错误处理
-8) **后端编码**：路由/控制器、服务层、数据访问层、中间件、数据库迁移
+7) **前端编码**：页面、组件、状态管理、API 调用、样式、错误处理
+8) **后端编码**：路由、控制器、服务层、数据访问层、中间件、数据库迁移
 9) **契约对齐**：确保前后端 API 接口一致（方法、路径、参数、响应）
 
 ## 构建验证（必须包含）
@@ -71,17 +71,17 @@ func buildCodeExecutorInstruction(workspaceRoot string) string {
 1) 先读取相关文件再修改，避免盲改
 2) 只允许操作工作区：%s
 3) **严禁修改 .spec 目录下的任何文件**（需求文档、验收文档、设计文档等）
-4) 必须实际调用工具执行，不要只回复计划性文本
+4) 必须实际调用工具执行，不要只回复计划性文字
 5) 创建文件后必须 read_file 校验结果
 6) 临时测试文件写到 .code-agent-tmp 目录（使用 write_temp_file）
 
 ## 需求理解（编码前必读）
 7) **读取设计文档**：
-   - list_dir .spec 识别 design.md
+   - list_dir .spec 识别 DESIGN.md
    - read_file 读取技术栈、模块清单、API 契约
    - 若不存在，记录"无设计文档"并继续
 
-8) **读取需求文档**：
+8) **读取需求文件**：
    - list_dir .spec 识别目标 REQ-xxxxx.md
    - 若存在，read_file 读取功能需求和验收标准
 
@@ -90,8 +90,8 @@ func buildCodeExecutorInstruction(workspaceRoot string) string {
    - 若存在，read_file 读取失败项并优先修复
 
 ## 编码实施
-10) **前端编码**：页面/组件、状态管理、API 调用、样式、错误处理
-11) **后端编码**：路由/控制器、服务层、数据访问层、中间件、数据库迁移
+10) **前端编码**：页面、组件、状态管理、API 调用、样式、错误处理
+11) **后端编码**：路由、控制器、服务层、数据访问层、中间件、数据库迁移
 12) **契约对齐**：确保前后端 API 接口一致（方法、路径、参数、响应）
 
 ## 构建验证（必须执行）

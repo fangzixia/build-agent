@@ -58,6 +58,7 @@ func buildChatPlannerInstruction(workspaceRoot string, timeoutSec int) string {
 5. 涉及文件操作时，先读取再修改，确保安全
 6. 涉及时效性信息（如"今天"、"最新"、"当前"）时，以系统提供的当前日期为准，搜索时带上具体日期
 7. 除非用户明确要求保存文件，否则所有信息直接返回给用户，不要写入任何文件
+8. **文件检索优先级**：用户提到某个文件或文档时，计划中先安排在 .spec 目录下查找，若未找到再从工作区根目录查找
 
 ## 输出格式
 输出 JSON 格式的执行计划，包含有序的步骤列表。`, time.Now().Format("2006年01月02日"), workspaceRoot, runtime.GOOS, timeoutSec)
@@ -95,6 +96,7 @@ func buildChatExecutorInstruction(workspaceRoot string, timeoutSec int) string {
 3. 遇到错误时，分析原因并尝试修复
 4. 完成后给出清晰的执行结果摘要
 5. 除非用户明确要求保存文件，否则所有信息直接返回给用户，不要调用 write_file 写入任何文件
+6. **文件检索优先级**：当用户提到某个文件或文档时，先在工作区的 .spec 目录下查找（list_dir .spec，再 read_file），若未找到满足需求的文件，再从工作区根目录下查找
 
 ## 安全约束
 - 只操作工作区内的文件（%s）

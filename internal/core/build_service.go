@@ -73,7 +73,7 @@ func (s *BuildService) RunBuildTask(ctx context.Context, task, requirementsPath 
 		}
 		if sum.Passed {
 			if onProgress != nil {
-				onProgress(EventLog{AgentName: "build", Output: "评测通过，开始执行 analysis 更新 design.md"})
+				onProgress(EventLog{AgentName: "build", Output: "评测通过，开始执行 analysis 更新 DESIGN.md"})
 			}
 			analysisSvc, svcErr := NewService(ctx, s.cfg, "analysis")
 			if svcErr != nil {
@@ -129,11 +129,11 @@ func (s *BuildService) buildCodeTask(userTask, reqRel, failureItems string) stri
 }
 
 func (s *BuildService) buildEvalTask(userTask, reqRel string) string {
-	return fmt.Sprintf("用户任务：%s\nrequirementsPath=%s\n请对照 requirementsPath 评测当前实现并按规则输出到 .spec/EVAL-REQ-xxxxx-xx.md。", strings.TrimSpace(userTask), reqRel)
+	return fmt.Sprintf("用户任务：%s\nrequirementsPath=%s\n请对照 requirementsPath 评测当前实现并按规则输出 .spec/EVAL-REQ-xxxxx-xx.md。", strings.TrimSpace(userTask), reqRel)
 }
 
 func (s *BuildService) buildAnalysisTask(userTask, reqRel string, score int) string {
-	return fmt.Sprintf("用户任务：%s\nrequirementsPath=%s\n当前评测已通过（score=%d）。请更新 design.md，反映本次实现后的模块行为、配置变化、启动/验证方式与限制。", strings.TrimSpace(userTask), reqRel, score)
+	return fmt.Sprintf("用户任务：%s\nrequirementsPath=%s\n当前评测已通过（score=%d）。请更新 DESIGN.md，反映本次实现后的模块行为、配置变化、启动/验证方式与限制。", strings.TrimSpace(userTask), reqRel, score)
 }
 
 func (s *BuildService) buildFinalOutput(passed bool, loops, maxRetries int, reqRel string, sum EvaluationSummary, analysisOutput string) string {

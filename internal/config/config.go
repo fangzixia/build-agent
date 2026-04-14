@@ -106,7 +106,7 @@ func buildAgentConfig(name, root string, as AgentSettings) (AgentConfig, error) 
 		ac.PlanExecuteMaxIterations = 10
 	}
 
-	absDesign, relDesign, err := resolvePathUnderRoot(root, ".spec/design.md")
+	absDesign, relDesign, err := resolvePathUnderRoot(root, ".spec/DESIGN.md")
 	if err != nil {
 		return AgentConfig{}, fmt.Errorf("%s design spec path: %w", name, err)
 	}
