@@ -38,6 +38,8 @@ type Config struct {
 	Base  BaseConfig
 	Model ModelConfig
 	Agent map[string]AgentConfig
+	// MCP 为用户配置的 MCP 服务器（stdio）；运行时按需拉起子进程。
+	MCP map[string]MCPServerConfig
 }
 
 func Load() (*Config, error) {
@@ -64,6 +66,11 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("resolve WORKSPACE_ROOT: %w", err)
 	}
 
+	mcpServers, err := MCPServersMap(s.MCPServers)
+	if err != nil {
+		return nil, fmt.Errorf("mcpServers: %w", err)
+	}
+
 	c := &Config{
 		Base: BaseConfig{
 			WorkspaceRoot:   absRoot,
@@ -77,10 +84,11 @@ func Load() (*Config, error) {
 			MaxContextTokens:       s.Model.MaxContextTokens,
 			SmartCompressThreshold: s.Model.SmartCompressThreshold,
 		},
-		Agent: make(map[string]AgentConfig, 5),
+		Agent: make(map[string]AgentConfig, 10),
+		MCP:   mcpServers,
 	}
 
-	for _, name := range []string{"CODE", "ANALYSIS", "EVAL", "REQUIREMENTS", "BUILD", "CHAT"} {
+	for _, name := range []string{"CODE", "ANALYSIS", "EVAL", "REQUIREMENTS", "BUILD", "CHAT", "PRODUCT_KB", "UI_INVENTORY"} {
 		lower := strings.ToLower(name)
 		as := s.Agents[lower]
 		ac, err := buildAgentConfig(lower, absRoot, as)

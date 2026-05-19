@@ -161,6 +161,16 @@
                             <div class="action-title">完整构建</div>
                             <div class="action-desc">编码 → 验收循环直到通过</div>
                         </div>
+                        <div class="action-card" data-action="product_kb">
+                            <div class="action-icon">📚</div>
+                            <div class="action-title">产品知识库</div>
+                            <div class="action-desc">界面清单 + 源码/需求关联，生成业务员说明</div>
+                        </div>
+                        <div class="action-card" data-action="ui_inventory">
+                            <div class="action-icon">🧭</div>
+                            <div class="action-title">界面导航采集</div>
+                            <div class="action-desc">登录站点，采集菜单 / Tab / 按钮，保存为 JSONL</div>
+                        </div>
                     </div>
 
                     <!-- 执行表单 -->
@@ -282,6 +292,16 @@
                                     <label class="config-field-label">智能压缩阈值</label>
                                     <input type="number" min="1000" id="model-smart-compress-threshold" class="config-field-input" placeholder="100000" />
                                 </div>
+                            </div>
+                        </div>
+
+                        <!-- MCP 服务器 -->
+                        <div class="config-section">
+                            <div class="config-section-title">MCP 服务器</div>
+                            <div class="config-section-body">
+                                <label class="config-field-label" for="mcp-servers-json">MCP 配置（JSON）</label>
+                                <textarea id="mcp-servers-json" class="config-field-input" rows="18" spellcheck="false" style="font-family:ui-monospace,Consolas,monospace;font-size:12px;line-height:1.45;"></textarea>
+                                <div id="mcp-status-results" style="margin-top:16px;"></div>
                             </div>
                         </div>
 

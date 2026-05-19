@@ -14,6 +14,7 @@ import (
 	"build-agent/internal/applog"
 	"build-agent/internal/config"
 	"build-agent/internal/core"
+	"build-agent/internal/mcpclient"
 	"build-agent/internal/toolkit"
 )
 
@@ -69,19 +70,50 @@ func (b *Bridge) RunTaskWithProgress(agentName, task string) (*core.RunResult, e
 	return result, err
 }
 
-// GetSettings 读取用户配置
-func (b *Bridge) GetSettings() (*config.Settings, error) {
+// SettingsView 返回给前端的模型与智能体配置（MCP 原文见 GetMCPServersJSON）。
+type SettingsView struct {
+	Model  config.ModelSettings            `json:"model"`
+	Agents map[string]config.AgentSettings `json:"agents"`
+}
+
+// SaveSettingsRequest 保存设置；MCPServersJSON 为编辑器中的原文，不经格式化改写。
+type SaveSettingsRequest struct {
+	Model          config.ModelSettings            `json:"model"`
+	Agents         map[string]config.AgentSettings `json:"agents"`
+	MCPServersJSON string                          `json:"mcpServersJSON"`
+}
+
+// GetSettings 读取用户配置（不含 MCP 原文）
+func (b *Bridge) GetSettings() (*SettingsView, error) {
 	applog.Bridge("GetSettings", nil)
 	s, err := config.LoadSettings()
 	if err != nil {
 		applog.BridgeError("GetSettings", err, nil)
+		return nil, err
 	}
-	return s, err
+	return &SettingsView{Model: s.Model, Agents: s.Agents}, nil
 }
 
-// SaveSettings 保存用户配置并热重载
-func (b *Bridge) SaveSettings(s *config.Settings) error {
-	applog.Bridge("SaveSettings", map[string]any{"model": s.Model.Model})
+// GetMCPServersJSON 返回配置文件中 mcpServers 字段的原始 JSON 文本（供编辑器展示，不做格式化）。
+func (b *Bridge) GetMCPServersJSON() (string, error) {
+	s, err := config.LoadSettings()
+	if err != nil {
+		return "", err
+	}
+	if len(s.MCPServers) == 0 {
+		return "{}", nil
+	}
+	return string(s.MCPServers), nil
+}
+
+// SaveSettings 保存用户配置并热重载（MCP 以原文写入）
+func (b *Bridge) SaveSettings(req SaveSettingsRequest) error {
+	applog.Bridge("SaveSettings", map[string]any{"model": req.Model.Model})
+	s, err := config.SettingsFromSaveRequest(req.Model, req.Agents, req.MCPServersJSON)
+	if err != nil {
+		applog.BridgeError("SaveSettings", err, nil)
+		return err
+	}
 	if err := config.SaveSettings(s); err != nil {
 		applog.BridgeError("SaveSettings", err, nil)
 		return fmt.Errorf("save settings: %w", err)
@@ -93,6 +125,15 @@ func (b *Bridge) SaveSettings(s *config.Settings) error {
 	}
 	b.cfg = newCfg
 	return nil
+}
+
+// ProbeMCP 按给定 mcpServers 逐一连接并列出工具（用于配置页调试）；单个失败不影响其它项。
+func (b *Bridge) ProbeMCP(servers map[string]config.MCPServerConfig) []mcpclient.MCPServerProbeResult {
+	applog.Bridge("ProbeMCP", map[string]any{"servers": len(servers)})
+	if servers == nil {
+		servers = map[string]config.MCPServerConfig{}
+	}
+	return mcpclient.ProbeServers(b.ctx, servers, b.cfg.Base.WorkspaceRoot, b.cfg.Base.CmdTimeoutSec)
 }
 
 // GetWorkspace 返回当前工作区和最近列表

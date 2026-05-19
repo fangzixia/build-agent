@@ -1,6 +1,7 @@
 package applog
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -55,11 +56,13 @@ func (l *Logger) write(level, msg string, fields map[string]any) {
 	for k, v := range fields {
 		entry[k] = v
 	}
-	data, err := json.Marshal(entry)
-	if err != nil {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(entry); err != nil {
 		return
 	}
-	l.file.Write(append(data, '\n'))
+	l.file.Write(buf.Bytes())
 }
 
 func (l *Logger) Info(msg string, fields map[string]any)  { l.write("INFO", msg, fields) }

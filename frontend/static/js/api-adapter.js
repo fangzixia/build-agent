@@ -1,4 +1,22 @@
-// API Adapter - 桌面模式，直接调�?Go Bridge
+// API Adapter - 桌面模式，直接调用 Go Bridge
+
+/** @param {any} error */
+function formatWailsError(error) {
+    if (error == null) return '任务执行失败';
+    if (typeof error === 'string') return error;
+    const m = error.message || error.Message;
+    if (m) return String(m);
+    if (error.error) return String(error.error);
+    try {
+        const s = String(error);
+        if (s && s !== '[object Object]') return s;
+    } catch (_) { /* ignore */ }
+    try {
+        return JSON.stringify(error);
+    } catch (_) {
+        return '任务执行失败';
+    }
+}
 
 const WailsAPI = {
     getMode: () => 'desktop',
@@ -19,9 +37,16 @@ const WailsAPI = {
     async getSettings() {
         return window.go.desktop.Bridge.GetSettings();
     },
+    async getMCPServersJSON() {
+        return window.go.desktop.Bridge.GetMCPServersJSON();
+    },
     async saveSettings(settings) {
         await window.go.desktop.Bridge.SaveSettings(settings);
         return { success: true };
+    },
+    /** @param {Record<string, object>} servers mcpServers 映射，与 settings.json 一致 */
+    async probeMCP(servers) {
+        return window.go.desktop.Bridge.ProbeMCP(servers || {});
     },
 
     // 文件操作
@@ -70,7 +95,7 @@ const WailsAPI = {
         } catch (error) {
             window.runtime.EventsOff(eventName);
             if (onError) {
-                onError({ error: error.message || '任务执行失败' });
+                onError({ error: formatWailsError(error) });
             } else {
                 throw error;
             }

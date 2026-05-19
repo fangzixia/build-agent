@@ -440,6 +440,8 @@ async function showExecutionForm(action) {
         eval: '验收评测',
         build: '完整构建',
         chat: '自由对话',
+        product_kb: '产品知识库',
+        ui_inventory: '界面导航采集',
     };
 
     const placeholders = {
@@ -449,6 +451,8 @@ async function showExecutionForm(action) {
         eval: '（可选）指定验收重点...',
         build: '（可选）指定构建参数...',
         chat: '请输入你的需求或问题，Agent 将直接执行...',
+        product_kb: '写明站点 URL、可选 Git/需求文档、登录方式（账号密码或 Bearer）...',
+        ui_inventory: '示例：访问 https://example.com/#/login ，账号 admin，密码 secret123。可补充「仅抓首页」则模型会将 crawl_max_pages 设为 1。',
     };
 
     $('#execution-form-title').textContent = titles[action] || '执行任务';
@@ -456,7 +460,7 @@ async function showExecutionForm(action) {
     $('#task-input').placeholder = placeholders[action] || '请输入任务描述...';
     
     // analysis 和其他非 requirements 的任务描述可选
-    const taskOptional = action !== 'requirements' && action !== 'chat';
+    const taskOptional = action !== 'requirements' && action !== 'chat' && action !== 'product_kb' && action !== 'ui_inventory';
     const label = $('#task-input').previousElementSibling;
     if (label && label.tagName === 'LABEL') {
         label.textContent = taskOptional ? '任务描述（可选）' : '任务描述';
@@ -831,6 +835,12 @@ async function addBuildFields(formBody, actionsDiv) {
 async function submitExecution() {
     const task = $('#task-input').value.trim();
     let filePath = '';
+
+    if (state.currentAction === 'ui_inventory' && !task) {
+        alert('请填写任务描述：需包含可打开的站点 URL，以及登录账号与密码（或 Bearer / storage state 等说明）。');
+        showExecutionForm('ui_inventory');
+        return;
+    }
     
     // 根据不同的 action 获取需求路径
     if (state.currentAction === 'requirements') {
@@ -1384,6 +1394,7 @@ document.addEventListener('DOMContentLoaded', () => {
 class ConfigPageController {
     constructor() {
         this.settings = null;
+        this.mcpServersJSON = '{}';
         this.agentLabels = {
             analysis:     '项目分析',
             requirements: '需求分析',
@@ -1391,6 +1402,8 @@ class ConfigPageController {
             eval:         '验收评测',
             build:        '完整构建',
             chat:         '自由对话',
+            product_kb:   '产品知识库',
+            ui_inventory: '界面导航采集',
         };
         $('#save-config-btn')?.addEventListener('click', () => this.saveConfig());
     }
@@ -1405,7 +1418,12 @@ class ConfigPageController {
         container.style.display = 'none';
 
         try {
-            this.settings = await WailsAPI.getSettings();
+            const [settings, mcpJSON] = await Promise.all([
+                WailsAPI.getSettings(),
+                WailsAPI.getMCPServersJSON(),
+            ]);
+            this.settings = settings;
+            this.mcpServersJSON = typeof mcpJSON === 'string' ? mcpJSON : '{}';
             this.render();
             loadingEl.style.display = 'none';
             container.style.display = 'block';
@@ -1423,6 +1441,13 @@ class ConfigPageController {
         $('#model-name').value     = s.model?.model   || '';
         $('#model-max-context-tokens').value = s.model?.maxContextTokens ?? 130000;
         $('#model-smart-compress-threshold').value = s.model?.smartCompressThreshold ?? 100000;
+
+        const mcpEl = $('#mcp-servers-json');
+        if (mcpEl) {
+            mcpEl.value = this.mcpServersJSON != null && String(this.mcpServersJSON).trim() !== ''
+                ? String(this.mcpServersJSON)
+                : '{}';
+        }
 
         const grid = $('#agents-config-grid');
         const agents = s.agents || {};
@@ -1466,6 +1491,8 @@ class ConfigPageController {
             if (!s.agents[agent]) s.agents[agent] = {};
             s.agents[agent][key] = parseInt(input.value, 10) || 1;
         });
+        const mcpRaw = $('#mcp-servers-json')?.value ?? '{}';
+        s.mcpServersJSON = String(mcpRaw);
         return s;
     }
 
@@ -1482,7 +1509,8 @@ class ConfigPageController {
         try {
             const s = this.collectSettings();
             await WailsAPI.saveSettings(s);
-            this.settings = s;
+            this.settings = { model: s.model, agents: s.agents };
+            this.mcpServersJSON = s.mcpServersJSON;
             successEl.textContent = '配置已保存';
             successEl.style.display = 'block';
             setTimeout(() => { successEl.style.display = 'none'; }, 3000);
